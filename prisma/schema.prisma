@@ -1,0 +1,131 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  CLIENT
+  BUSINESS_OWNER
+}
+
+enum BusinessCategory {
+  BARBERSHOP
+  SPA
+  SALON
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  role      Role     @default(CLIENT)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  businesses Business[]
+  bookings   Booking[]
+}
+
+model Business {
+  id          String           @id @default(cuid())
+  name        String
+  description String?
+  address     String
+  city        String
+  phone       String?
+  category    BusinessCategory
+  ownerId     String
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  owner         User           @relation(fields: [ownerId], references: [id])
+  professionals Professional[]
+  services      Service[]
+}
+
+model Professional {
+  id         String   @id @default(cuid())
+  name       String
+  bio        String?
+  businessId String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  business           Business            @relation(fields: [businessId], references: [id])
+  schedules          Schedule[]
+  scheduleExceptions ScheduleException[]
+  bookings           Booking[]
+}
+
+model Service {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  duration    Int
+  price       Decimal  @db.Decimal(10, 2)
+  businessId  String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  business Business  @relation(fields: [businessId], references: [id])
+  bookings Booking[]
+}
+
+// Weekly recurring availability per professional
+// dayOfWeek: 0=Sunday ... 6=Saturday
+model Schedule {
+  id             String   @id @default(cuid())
+  professionalId String
+  dayOfWeek      Int
+  startTime      String
+  endTime        String
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  professional Professional @relation(fields: [professionalId], references: [id])
+
+  @@unique([professionalId, dayOfWeek])
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+}
+
+// Minimal booking — used by slot engine to exclude occupied time
+model Booking {
+  id             String        @id @default(cuid())
+  professionalId String
+  serviceId      String
+  clientId       String
+  date           DateTime      @db.Date
+  startTime      String
+  endTime        String
+  status         BookingStatus @default(PENDING)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  professional Professional @relation(fields: [professionalId], references: [id])
+  service      Service      @relation(fields: [serviceId], references: [id])
+  client       User         @relation(fields: [clientId], references: [id])
+}
+
+// Blocks a specific date (full day or time range)
+model ScheduleException {
+  id             String    @id @default(cuid())
+  professionalId String
+  date           DateTime  @db.Date
+  startTime      String?
+  endTime        String?
+  reason         String?
+  createdAt      DateTime  @default(now())
+
+  professional Professional @relation(fields: [professionalId], references: [id])
+}
