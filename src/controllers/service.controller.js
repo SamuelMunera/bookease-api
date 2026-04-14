@@ -2,6 +2,16 @@ const serviceService = require('../services/service.service');
 
 async function create(req, res) {
   try {
+    const { name, duration, price } = req.body;
+    if (!name || !duration || price === undefined) {
+      return res.status(400).json({ error: 'name, duration and price are required' });
+    }
+    if (typeof duration !== 'number' || duration <= 0) {
+      return res.status(400).json({ error: 'duration must be a positive number (minutes)' });
+    }
+    if (Number(price) < 0) {
+      return res.status(400).json({ error: 'price must be >= 0' });
+    }
     const service = await serviceService.create(req.params.businessId, req.body);
     res.status(201).json(service);
   } catch (err) {
