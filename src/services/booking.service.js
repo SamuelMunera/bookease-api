@@ -10,6 +10,8 @@ const BOOKING_INCLUDE = {
 
 async function createBooking({ clientId, professionalId, serviceId, date, startTime }) {
   const localDate = parseLocalDate(date);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  if (localDate < today) throw new Error('Cannot book a past date');
   const dayOfWeek = localDate.getDay();
 
   // FIX: assign result so email code is reachable
