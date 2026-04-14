@@ -13,10 +13,10 @@ function overlaps(aStart, aEnd, bStart, bEnd) {
   return aStart < bEnd && aEnd > bStart;
 }
 
-// Parses "YYYY-MM-DD" safely without timezone shift
+// Parses "YYYY-MM-DD" as UTC midnight so it matches PostgreSQL DATE storage
 function parseLocalDate(dateStr) {
   const [y, m, d] = dateStr.split('-').map(Number);
-  return new Date(y, m - 1, d);
+  return new Date(Date.UTC(y, m - 1, d));
 }
 
 async function getAvailableSlots(professionalId, serviceId, dateStr) {
