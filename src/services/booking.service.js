@@ -10,7 +10,8 @@ const BOOKING_INCLUDE = {
 
 async function createBooking({ clientId, professionalId, serviceId, date, startTime }) {
   const localDate = parseLocalDate(date);
-  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const now = new Date();
+  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   if (localDate < today) throw new Error('Cannot book a past date');
   const dayOfWeek = localDate.getDay();
 
@@ -159,4 +160,71 @@ async function confirmBooking(id, ownerId) {
   return confirmed;
 }
 
-module.exports = { createBooking, getUserBookings, cancelBooking, cancelBookingAsOwner, getBusinessBookings, confirmBooking };
+async function rescheduleBooking(id, clientId, { date, startTime }) {
+  const localDate = parseLocalDate(date);
+  const now = new Date();
+  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  if (localDate < today) throw new Error('Cannot reschedule to a past date');
+
+  const rescheduled = await prisma.$transaction(
+    async (tx) => {
+      const existing = await tx.booking.findUnique({
+        where: { id },
+        include: { service: { select: { duration: true } } },
+      });
+      if (!existing) throw new Error('Booking not found');
+      if (existing.clientId !== clientId) throw new Error('Forbidden');
+      if (existing.status === 'CANCELLED') throw new Error('Cannot reschedule a cancelled booking');
+
+      const { professionalId, service } = existing;
+      const dayOfWeek = localDate.getDay();
+      const slotStart = toMinutes(startTime);
+      const slotEnd = slotStart + service.duration;
+      const endTime = toTime(slotEnd);
+
+      const schedule = await tx.schedule.findUnique({
+        where: { professionalId_dayOfWeek: { professionalId, dayOfWeek } },
+      });
+      if (!schedule || !schedule.isActive)
+        throw new Error('Professional not available on this day');
+      if (slotStart < toMinutes(schedule.startTime) || slotEnd > toMinutes(schedule.endTime))
+        throw new Error('Slot is outside working hours');
+
+      const exceptions = await tx.scheduleException.findMany({
+        where: { professionalId, date: localDate },
+      });
+      if (exceptions.some((e) => !e.startTime && !e.endTime))
+        throw new Error('Professional unavailable on this date');
+      const blockedByException = exceptions
+        .filter((e) => e.startTime && e.endTime)
+        .some((e) => overlaps(slotStart, slotEnd, toMinutes(e.startTime), toMinutes(e.endTime)));
+      if (blockedByException) throw new Error('Slot overlaps with a blocked period');
+
+      const conflict = await tx.booking.findFirst({
+        where: {
+          professionalId,
+          date: localDate,
+          status: { not: 'CANCELLED' },
+          id: { not: id }, // exclude current booking
+          AND: [{ startTime: { lt: endTime } }, { endTime: { gt: startTime } }],
+        },
+      });
+      if (conflict) throw new Error('Slot is no longer available');
+
+      return tx.booking.update({
+        where: { id },
+        data: { date: localDate, startTime, endTime, status: 'CONFIRMED' },
+        include: BOOKING_INCLUDE,
+      });
+    },
+    { isolationLevel: 'Serializable' }
+  );
+
+  emailService
+    .sendConfirmation({ ...rescheduled, clientName: rescheduled.client.name }, rescheduled.client.email)
+    .catch((err) => console.error('[email] reschedule confirmation failed:', err.message));
+
+  return rescheduled;
+}
+
+module.exports = { createBooking, getUserBookings, cancelBooking, cancelBookingAsOwner, getBusinessBookings, confirmBooking, rescheduleBooking };

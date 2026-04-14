@@ -78,4 +78,24 @@ async function confirm(req, res) {
   }
 }
 
-module.exports = { create, myBookings, cancel, cancelAsOwner, businessBookings, confirm };
+async function reschedule(req, res) {
+  try {
+    const { date, startTime } = req.body;
+    if (!date || !startTime) {
+      return res.status(400).json({ error: 'date and startTime are required' });
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
+    }
+    if (!/^\d{2}:\d{2}$/.test(startTime)) {
+      return res.status(400).json({ error: 'startTime must be HH:MM' });
+    }
+    const booking = await bookingService.rescheduleBooking(req.params.id, req.user.id, { date, startTime });
+    res.json(booking);
+  } catch (err) {
+    const status = err.message === 'Forbidden' ? 403 : 400;
+    res.status(status).json({ error: err.message });
+  }
+}
+
+module.exports = { create, myBookings, cancel, cancelAsOwner, businessBookings, confirm, reschedule };
