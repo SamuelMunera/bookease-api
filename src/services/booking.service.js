@@ -113,7 +113,28 @@ async function getBusinessBookings(businessId, ownerId, { date, from, to } = {})
   });
 }
 
-// Gap 2: confirm booking
+async function cancelBookingAsOwner(id, ownerId) {
+  const booking = await prisma.booking.findUnique({
+    where: { id },
+    include: { professional: { include: { business: { select: { ownerId: true } } } } },
+  });
+  if (!booking) throw new Error('Booking not found');
+  if (booking.professional.business.ownerId !== ownerId) throw new Error('Forbidden');
+  if (booking.status === 'CANCELLED') throw new Error('Already cancelled');
+
+  const cancelled = await prisma.booking.update({
+    where: { id },
+    data: { status: 'CANCELLED' },
+    include: BOOKING_INCLUDE,
+  });
+
+  emailService
+    .sendCancellation({ ...cancelled, clientName: cancelled.client.name }, cancelled.client.email)
+    .catch((err) => console.error('[email] cancellation failed:', err.message));
+
+  return cancelled;
+}
+
 async function confirmBooking(id, ownerId) {
   const booking = await prisma.booking.findUnique({
     where: { id },
@@ -136,4 +157,4 @@ async function confirmBooking(id, ownerId) {
   return confirmed;
 }
 
-module.exports = { createBooking, getUserBookings, cancelBooking, getBusinessBookings, confirmBooking };
+module.exports = { createBooking, getUserBookings, cancelBooking, cancelBookingAsOwner, getBusinessBookings, confirmBooking };

@@ -58,6 +58,16 @@ async function businessBookings(req, res) {
   }
 }
 
+async function cancelAsOwner(req, res) {
+  try {
+    const booking = await bookingService.cancelBookingAsOwner(req.params.id, req.user.id);
+    res.json(booking);
+  } catch (err) {
+    const status = err.message === 'Forbidden' ? 403 : 400;
+    res.status(status).json({ error: err.message });
+  }
+}
+
 async function confirm(req, res) {
   try {
     const booking = await bookingService.confirmBooking(req.params.id, req.user.id);
@@ -68,4 +78,4 @@ async function confirm(req, res) {
   }
 }
 
-module.exports = { create, myBookings, cancel, businessBookings, confirm };
+module.exports = { create, myBookings, cancel, cancelAsOwner, businessBookings, confirm };
