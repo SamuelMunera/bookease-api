@@ -36,4 +36,14 @@ async function remove(req, res) {
   }
 }
 
-module.exports = { create, findByBusiness, update, remove };
+async function findById(req, res) {
+  try {
+    const prof = await professionalService.findById(req.params.id);
+    if (!prof) return res.status(404).json({ error: 'Professional not found' });
+    res.json(prof);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
+module.exports = { create, findByBusiness, findById, update, remove };
