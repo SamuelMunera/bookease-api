@@ -53,7 +53,7 @@ async function createBooking({ clientId, professionalId, serviceId, date, startT
       if (conflict) throw new Error('Slot is no longer available');
 
       return tx.booking.create({
-        data: { clientId, professionalId, serviceId, date: localDate, startTime, endTime },
+        data: { clientId, professionalId, serviceId, date: localDate, startTime, endTime, status: 'CONFIRMED' },
         include: BOOKING_INCLUDE,
       });
     },
