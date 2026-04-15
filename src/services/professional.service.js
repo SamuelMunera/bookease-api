@@ -97,6 +97,47 @@ async function setMySchedule(userId, days) {
   return results;
 }
 
+function parseDate(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d));
+}
+
+async function getWeekSchedule(userId, weekStart) {
+  const prof = await prisma.professional.findUnique({ where: { userId } });
+  if (!prof) throw new Error('Professional profile not found');
+  const ws = parseDate(weekStart);
+  const [recurring, overrides] = await Promise.all([
+    prisma.schedule.findMany({ where: { professionalId: prof.id } }),
+    prisma.scheduleOverride.findMany({ where: { professionalId: prof.id, weekStart: ws } }),
+  ]);
+  return [0,1,2,3,4,5,6].map(dow => {
+    const ov  = overrides.find(o => o.dayOfWeek === dow);
+    const rec = recurring.find(r => r.dayOfWeek === dow);
+    if (ov) return { dayOfWeek: dow, startTime: ov.startTime, endTime: ov.endTime, isActive: ov.isActive, isOverride: true };
+    return { dayOfWeek: dow, startTime: rec?.startTime ?? '09:00', endTime: rec?.endTime ?? '18:00', isActive: rec?.isActive ?? false, isOverride: false };
+  });
+}
+
+async function setWeekSchedule(userId, weekStart, days) {
+  const prof = await prisma.professional.findUnique({ where: { userId } });
+  if (!prof) throw new Error('Professional profile not found');
+  const ws = parseDate(weekStart);
+  return Promise.all(days.map(({ dayOfWeek, startTime, endTime, isActive }) =>
+    prisma.scheduleOverride.upsert({
+      where: { professionalId_weekStart_dayOfWeek: { professionalId: prof.id, weekStart: ws, dayOfWeek } },
+      update: { startTime, endTime, isActive: isActive ?? true },
+      create: { professionalId: prof.id, weekStart: ws, dayOfWeek, startTime, endTime, isActive: isActive ?? true },
+    })
+  ));
+}
+
+async function deleteWeekSchedule(userId, weekStart) {
+  const prof = await prisma.professional.findUnique({ where: { userId } });
+  if (!prof) throw new Error('Professional profile not found');
+  const ws = parseDate(weekStart);
+  await prisma.scheduleOverride.deleteMany({ where: { professionalId: prof.id, weekStart: ws } });
+}
+
 async function create(businessId, data) {
   return prisma.professional.create({ data: { ...data, businessId } });
 }
@@ -120,4 +161,4 @@ async function remove(id) {
   return prisma.professional.delete({ where: { id } });
 }
 
-module.exports = { registerProfessional, getMyProfile, getMyBookings, getMyServices, setMyServices, getMySchedule, setMySchedule, create, findByBusiness, findById, update, remove };
+module.exports = { registerProfessional, getMyProfile, getMyBookings, getMyServices, setMyServices, getMySchedule, setMySchedule, getWeekSchedule, setWeekSchedule, deleteWeekSchedule, create, findByBusiness, findById, update, remove };

@@ -67,6 +67,7 @@ model Professional {
   user               User?               @relation(fields: [userId], references: [id])
   schedules          Schedule[]
   scheduleExceptions ScheduleException[]
+  scheduleOverrides  ScheduleOverride[]
   bookings           Booking[]
   services           Service[]
 }
@@ -101,6 +102,22 @@ model Schedule {
   professional Professional @relation(fields: [professionalId], references: [id])
 
   @@unique([professionalId, dayOfWeek])
+}
+
+// Per-week overrides for the recurring schedule
+model ScheduleOverride {
+  id             String   @id @default(cuid())
+  professionalId String
+  weekStart      DateTime @db.Date
+  dayOfWeek      Int
+  startTime      String
+  endTime        String
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  professional Professional @relation(fields: [professionalId], references: [id])
+
+  @@unique([professionalId, weekStart, dayOfWeek])
 }
 
 enum BookingStatus {

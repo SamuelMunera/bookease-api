@@ -110,6 +110,29 @@ async function findById(req, res) {
   }
 }
 
+async function getWeekSchedule(req, res) {
+  try {
+    const data = await professionalService.getWeekSchedule(req.user.id, req.params.weekStart);
+    res.json(data);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+}
+
+async function setWeekSchedule(req, res) {
+  try {
+    const { days } = req.body;
+    if (!Array.isArray(days)) return res.status(400).json({ error: 'days must be an array' });
+    const result = await professionalService.setWeekSchedule(req.user.id, req.params.weekStart, days);
+    res.json(result);
+  } catch (err) { res.status(400).json({ error: err.message }); }
+}
+
+async function deleteWeekSchedule(req, res) {
+  try {
+    await professionalService.deleteWeekSchedule(req.user.id, req.params.weekStart);
+    res.status(204).send();
+  } catch (err) { res.status(400).json({ error: err.message }); }
+}
+
 async function getProfessionalServices(req, res) {
   try {
     const prof = await prisma.professional.findUnique({
@@ -121,4 +144,4 @@ async function getProfessionalServices(req, res) {
   } catch (err) { res.status(500).json({ error: err.message }); }
 }
 
-module.exports = { register, getMe, getMyBookings, getMyServices, setMyServices, getMySchedule, setMySchedule, getProfessionalServices, create, findByBusiness, findById, update, remove };
+module.exports = { register, getMe, getMyBookings, getMyServices, setMyServices, getMySchedule, setMySchedule, getWeekSchedule, setWeekSchedule, deleteWeekSchedule, getProfessionalServices, create, findByBusiness, findById, update, remove };

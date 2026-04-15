@@ -19,23 +19,45 @@ function parseLocalDate(dateStr) {
   return new Date(Date.UTC(y, m - 1, d));
 }
 
+function getWeekStartStr(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  const dow = date.getDay();
+  const diff = dow === 0 ? -6 : 1 - dow; // shift to Monday
+  date.setDate(date.getDate() + diff);
+  return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+}
+
 async function getAvailableSlots(professionalId, serviceId, dateStr) {
   const localDate = parseLocalDate(dateStr);
-  const dayOfWeek = localDate.getDay(); // 0=Sunday ... 6=Saturday
+  // Compute dayOfWeek from local midnight to avoid UTC offset shifting the day
+  const [_y, _m, _d] = dateStr.split('-').map(Number);
+  const dayOfWeek = new Date(_y, _m - 1, _d).getDay(); // 0=Sunday ... 6=Saturday
 
   // 1. Service duration
   const service = await prisma.service.findUnique({ where: { id: serviceId } });
   if (!service) throw new Error('Service not found');
   const duration = service.duration;
 
-  // 2. Professional weekly schedule for that day
-  const schedule = await prisma.schedule.findUnique({
-    where: { professionalId_dayOfWeek: { professionalId, dayOfWeek } },
+  // 2. Check week-specific override first, then fall back to recurring schedule
+  const weekStart = parseLocalDate(getWeekStartStr(dateStr));
+  const override = await prisma.scheduleOverride.findUnique({
+    where: { professionalId_weekStart_dayOfWeek: { professionalId, weekStart, dayOfWeek } },
   });
-  if (!schedule || !schedule.isActive) return [];
 
-  const dayStart = toMinutes(schedule.startTime);
-  const dayEnd = toMinutes(schedule.endTime);
+  let dayStart, dayEnd;
+  if (override) {
+    if (!override.isActive) return [];
+    dayStart = toMinutes(override.startTime);
+    dayEnd   = toMinutes(override.endTime);
+  } else {
+    const schedule = await prisma.schedule.findUnique({
+      where: { professionalId_dayOfWeek: { professionalId, dayOfWeek } },
+    });
+    if (!schedule || !schedule.isActive) return [];
+    dayStart = toMinutes(schedule.startTime);
+    dayEnd   = toMinutes(schedule.endTime);
+  }
 
   // 3. Exceptions for that date
   const exceptions = await prisma.scheduleException.findMany({
