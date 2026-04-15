@@ -21,6 +21,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/businesses', businessRoutes);
 app.use('/api/pro', proRoutes);
 app.get('/api/professionals/:id', professionalController.findById);
+app.get('/api/professionals/:id/services', professionalController.getProfessionalServices);
 app.use('/api/businesses/:businessId/professionals', professionalRoutes);
 app.use('/api/businesses/:businessId/services', serviceRoutes);
 app.use('/api/businesses/:businessId/professionals/:professionalId/schedules', scheduleRoutes);
