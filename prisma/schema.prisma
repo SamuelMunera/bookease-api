@@ -68,6 +68,7 @@ model Professional {
   schedules          Schedule[]
   scheduleExceptions ScheduleException[]
   bookings           Booking[]
+  services           Service[]
 }
 
 model Service {
@@ -80,8 +81,9 @@ model Service {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  business Business  @relation(fields: [businessId], references: [id])
-  bookings Booking[]
+  business      Business       @relation(fields: [businessId], references: [id])
+  bookings      Booking[]
+  professionals Professional[]
 }
 
 // Weekly recurring availability per professional

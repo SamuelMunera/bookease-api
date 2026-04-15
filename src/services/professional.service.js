@@ -18,10 +18,10 @@ async function registerProfessional({ name, email, password, phone, specialty, b
         create: { name, phone, specialty, bio, experience, businessId },
       },
     },
-    include: {
+    select: {
+      id: true, name: true, email: true, role: true,
       professional: { select: { id: true, businessId: true, specialty: true } },
     },
-    select: { id: true, name: true, email: true, role: true, professional: true },
   });
 
   const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET, {
@@ -53,6 +53,50 @@ async function getMyBookings(userId) {
   });
 }
 
+async function getMyServices(userId) {
+  const prof = await prisma.professional.findUnique({ where: { userId } });
+  if (!prof) throw new Error('Professional profile not found');
+  return prisma.professional.findUnique({
+    where: { id: prof.id },
+    select: { services: { select: { id: true, name: true, duration: true, price: true } } },
+  }).then(p => p?.services ?? []);
+}
+
+async function setMyServices(userId, serviceIds) {
+  const prof = await prisma.professional.findUnique({ where: { userId } });
+  if (!prof) throw new Error('Professional profile not found');
+  return prisma.professional.update({
+    where: { id: prof.id },
+    data: { services: { set: serviceIds.map(id => ({ id })) } },
+    select: { services: { select: { id: true, name: true, duration: true, price: true } } },
+  }).then(p => p.services);
+}
+
+async function getMySchedule(userId) {
+  const prof = await prisma.professional.findUnique({ where: { userId } });
+  if (!prof) throw new Error('Professional profile not found');
+  return prisma.schedule.findMany({
+    where: { professionalId: prof.id },
+    orderBy: { dayOfWeek: 'asc' },
+  });
+}
+
+async function setMySchedule(userId, days) {
+  // days: [{ dayOfWeek, startTime, endTime, isActive }]
+  const prof = await prisma.professional.findUnique({ where: { userId } });
+  if (!prof) throw new Error('Professional profile not found');
+  const results = await Promise.all(
+    days.map(({ dayOfWeek, startTime, endTime, isActive }) =>
+      prisma.schedule.upsert({
+        where: { professionalId_dayOfWeek: { professionalId: prof.id, dayOfWeek } },
+        update: { startTime, endTime, isActive: isActive ?? true },
+        create: { professionalId: prof.id, dayOfWeek, startTime, endTime, isActive: isActive ?? true },
+      })
+    )
+  );
+  return results;
+}
+
 async function create(businessId, data) {
   return prisma.professional.create({ data: { ...data, businessId } });
 }
@@ -76,4 +120,4 @@ async function remove(id) {
   return prisma.professional.delete({ where: { id } });
 }
 
-module.exports = { registerProfessional, getMyProfile, getMyBookings, create, findByBusiness, findById, update, remove };
+module.exports = { registerProfessional, getMyProfile, getMyBookings, getMyServices, setMyServices, getMySchedule, setMySchedule, create, findByBusiness, findById, update, remove };

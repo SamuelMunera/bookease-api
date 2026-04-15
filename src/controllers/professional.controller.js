@@ -1,4 +1,5 @@
 const professionalService = require('../services/professional.service');
+const prisma = require('../config/database');
 
 async function register(req, res) {
   try {
@@ -29,6 +30,38 @@ async function getMyBookings(req, res) {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+}
+
+async function getMyServices(req, res) {
+  try {
+    const services = await professionalService.getMyServices(req.user.id);
+    res.json(services);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+}
+
+async function setMyServices(req, res) {
+  try {
+    const { serviceIds } = req.body;
+    if (!Array.isArray(serviceIds)) return res.status(400).json({ error: 'serviceIds must be an array' });
+    const services = await professionalService.setMyServices(req.user.id, serviceIds);
+    res.json(services);
+  } catch (err) { res.status(400).json({ error: err.message }); }
+}
+
+async function getMySchedule(req, res) {
+  try {
+    const schedule = await professionalService.getMySchedule(req.user.id);
+    res.json(schedule);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+}
+
+async function setMySchedule(req, res) {
+  try {
+    const { days } = req.body;
+    if (!Array.isArray(days)) return res.status(400).json({ error: 'days must be an array' });
+    const result = await professionalService.setMySchedule(req.user.id, days);
+    res.json(result);
+  } catch (err) { res.status(400).json({ error: err.message }); }
 }
 
 async function create(req, res) {
@@ -77,4 +110,15 @@ async function findById(req, res) {
   }
 }
 
-module.exports = { register, getMe, getMyBookings, create, findByBusiness, findById, update, remove };
+async function getProfessionalServices(req, res) {
+  try {
+    const prof = await prisma.professional.findUnique({
+      where: { id: req.params.id },
+      select: { services: { select: { id: true, name: true, duration: true, price: true } } },
+    });
+    if (!prof) return res.status(404).json({ error: 'Professional not found' });
+    res.json(prof.services);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+}
+
+module.exports = { register, getMe, getMyBookings, getMyServices, setMyServices, getMySchedule, setMySchedule, getProfessionalServices, create, findByBusiness, findById, update, remove };
