@@ -11,6 +11,7 @@ datasource db {
 enum Role {
   CLIENT
   BUSINESS_OWNER
+  PROFESSIONAL
 }
 
 enum BusinessCategory {
@@ -28,8 +29,9 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  businesses Business[]
-  bookings   Booking[]
+  businesses   Business[]
+  bookings     Booking[]
+  professional Professional?
 }
 
 model Business {
@@ -53,11 +55,16 @@ model Professional {
   id         String   @id @default(cuid())
   name       String
   bio        String?
+  phone      String?
+  specialty  String?
+  experience String?
   businessId String
+  userId     String?  @unique
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
   business           Business            @relation(fields: [businessId], references: [id])
+  user               User?               @relation(fields: [userId], references: [id])
   schedules          Schedule[]
   scheduleExceptions ScheduleException[]
   bookings           Booking[]
