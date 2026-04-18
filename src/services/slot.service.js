@@ -23,23 +23,31 @@ function getWeekStartStr(dateStr) {
   const [y, m, d] = dateStr.split('-').map(Number);
   const date = new Date(y, m - 1, d);
   const dow = date.getDay();
-  const diff = dow === 0 ? -6 : 1 - dow; // shift to Monday
+  const diff = dow === 0 ? -6 : 1 - dow;
   date.setDate(date.getDate() + diff);
   return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
 }
 
 async function getAvailableSlots(professionalId, serviceId, dateStr) {
   const localDate = parseLocalDate(dateStr);
-  // Compute dayOfWeek from local midnight to avoid UTC offset shifting the day
   const [_y, _m, _d] = dateStr.split('-').map(Number);
-  const dayOfWeek = new Date(_y, _m - 1, _d).getDay(); // 0=Sunday ... 6=Saturday
+  const dayOfWeek = new Date(_y, _m - 1, _d).getDay();
 
-  // 1. Service duration
+  // 1. Service base duration
   const service = await prisma.service.findUnique({ where: { id: serviceId } });
   if (!service) throw new Error('Service not found');
-  const duration = service.duration;
 
-  // 2. Check week-specific override first, then fall back to recurring schedule
+  // 2. Professional custom duration + buffer
+  const [proRow, svcConfig] = await Promise.all([
+    prisma.professional.findUnique({ where: { id: professionalId }, select: { bufferTime: true } }),
+    prisma.professionalServiceConfig.findUnique({
+      where: { professionalId_serviceId: { professionalId, serviceId } },
+    }),
+  ]);
+  const effectiveDuration = svcConfig?.customDuration ?? service.duration;
+  const bufferTime = proRow?.bufferTime ?? 0;
+
+  // 3. Check week-specific override first, then recurring schedule
   const weekStart = parseLocalDate(getWeekStartStr(dateStr));
   const override = await prisma.scheduleOverride.findUnique({
     where: { professionalId_weekStart_dayOfWeek: { professionalId, weekStart, dayOfWeek } },
@@ -59,39 +67,33 @@ async function getAvailableSlots(professionalId, serviceId, dateStr) {
     dayEnd   = toMinutes(schedule.endTime);
   }
 
-  // 3. Exceptions for that date
+  // 4. Exceptions
   const exceptions = await prisma.scheduleException.findMany({
     where: { professionalId, date: localDate },
   });
-
-  // Full-day block → no slots
   if (exceptions.some((e) => !e.startTime && !e.endTime)) return [];
 
   const exceptionBlocks = exceptions
     .filter((e) => e.startTime && e.endTime)
     .map((e) => ({ start: toMinutes(e.startTime), end: toMinutes(e.endTime) }));
 
-  // 4. Existing bookings (not cancelled)
+  // 5. Existing bookings — extend end by bufferTime so next slot can't start during buffer gap
   const bookings = await prisma.booking.findMany({
-    where: {
-      professionalId,
-      date: localDate,
-      status: { not: 'CANCELLED' },
-    },
+    where: { professionalId, date: localDate, status: { not: 'CANCELLED' } },
   });
-
   const bookingBlocks = bookings.map((b) => ({
     start: toMinutes(b.startTime),
-    end: toMinutes(b.endTime),
+    end:   toMinutes(b.endTime) + bufferTime,
   }));
 
   const blocked = [...exceptionBlocks, ...bookingBlocks];
 
-  // 5. Generate slots (past-time filtering is handled by the client with local time)
+  // 6. Generate slots
   const slots = [];
-  for (let start = dayStart; start + duration <= dayEnd; start += duration) {
-    const end = start + duration;
-    if (!blocked.some((b) => overlaps(start, end, b.start, b.end))) {
+  for (let start = dayStart; start + effectiveDuration <= dayEnd; start += effectiveDuration) {
+    const end = start + effectiveDuration;
+    // Check slot [start, end + bufferTime] against blocked blocks
+    if (!blocked.some((b) => overlaps(start, end + bufferTime, b.start, b.end))) {
       slots.push({ startTime: toTime(start), endTime: toTime(end) });
     }
   }

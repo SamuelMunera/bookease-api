@@ -8,30 +8,45 @@ const BOOKING_INCLUDE = {
   service: { select: { id: true, name: true, duration: true, price: true } },
 };
 
+// Returns { effectiveDuration, bufferTime } for a professional+service pair
+async function getEffectiveTiming(tx, professionalId, serviceId) {
+  const [proRow, svcConfig] = await Promise.all([
+    tx.professional.findUnique({ where: { id: professionalId }, select: { bufferTime: true } }),
+    tx.professionalServiceConfig.findUnique({
+      where: { professionalId_serviceId: { professionalId, serviceId } },
+    }),
+  ]);
+  return {
+    bufferTime: proRow?.bufferTime ?? 0,
+    customDuration: svcConfig?.customDuration ?? null,
+  };
+}
+
 async function createBooking({ clientId, professionalId, serviceId, date, startTime }) {
   const localDate = parseLocalDate(date);
   const now = new Date();
   const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   if (localDate < today) throw new Error('Cannot book a past date');
-  // Parse dayOfWeek from the date string directly (avoids UTC-offset shifting the day)
+
   const [_dy, _dm, _dd] = date.split('-').map(Number);
   const dayOfWeek = new Date(_dy, _dm - 1, _dd).getDay();
 
-  // FIX: assign result so email code is reachable
   const booking = await prisma.$transaction(
     async (tx) => {
       const service = await tx.service.findUnique({ where: { id: serviceId } });
       if (!service) throw new Error('Service not found');
 
+      const { bufferTime, customDuration } = await getEffectiveTiming(tx, professionalId, serviceId);
+      const effectiveDuration = customDuration ?? service.duration;
+
       const slotStart = toMinutes(startTime);
-      const slotEnd = slotStart + service.duration;
+      const slotEnd = slotStart + effectiveDuration;
       const endTime = toTime(slotEnd);
 
-      // Check override first, then fall back to recurring schedule (mirrors slot.service logic)
+      // Week override → recurring schedule
       const [wy, wm, wd] = date.split('-').map(Number);
       const wDate = new Date(wy, wm - 1, wd);
-      const wDow = wDate.getDay();
-      const wDiff = wDow === 0 ? -6 : 1 - wDow;
+      const wDiff = wDate.getDay() === 0 ? -6 : 1 - wDate.getDay();
       wDate.setDate(wDate.getDate() + wDiff);
       const weekStart = new Date(Date.UTC(wDate.getFullYear(), wDate.getMonth(), wDate.getDate()));
       const override = await tx.scheduleOverride.findUnique({
@@ -40,14 +55,14 @@ async function createBooking({ clientId, professionalId, serviceId, date, startT
 
       let dayStartMin, dayEndMin, isActive;
       if (override) {
-        isActive   = override.isActive;
+        isActive    = override.isActive;
         dayStartMin = toMinutes(override.startTime);
         dayEndMin   = toMinutes(override.endTime);
       } else {
         const schedule = await tx.schedule.findUnique({
           where: { professionalId_dayOfWeek: { professionalId, dayOfWeek } },
         });
-        isActive   = schedule?.isActive ?? false;
+        isActive    = schedule?.isActive ?? false;
         dayStartMin = schedule ? toMinutes(schedule.startTime) : 0;
         dayEndMin   = schedule ? toMinutes(schedule.endTime)   : 0;
       }
@@ -67,13 +82,14 @@ async function createBooking({ clientId, professionalId, serviceId, date, startT
         .some((e) => overlaps(slotStart, slotEnd, toMinutes(e.startTime), toMinutes(e.endTime)));
       if (blockedByException) throw new Error('Slot overlaps with a blocked period');
 
-      const conflict = await tx.booking.findFirst({
-        where: {
-          professionalId,
-          date: localDate,
-          status: { not: 'CANCELLED' },
-          AND: [{ startTime: { lt: endTime } }, { endTime: { gt: startTime } }],
-        },
+      // Conflict check: fetch bookings in JS to apply buffer correctly
+      const existingBookings = await tx.booking.findMany({
+        where: { professionalId, date: localDate, status: { not: 'CANCELLED' } },
+      });
+      const conflict = existingBookings.some(b => {
+        const bStart = toMinutes(b.startTime);
+        const bEnd   = toMinutes(b.endTime) + bufferTime;
+        return overlaps(slotStart, slotEnd + bufferTime, bStart, bEnd);
       });
       if (conflict) throw new Error('Slot is no longer available');
 
@@ -119,7 +135,6 @@ async function cancelBooking(id, clientId) {
   return cancelled;
 }
 
-// Gap 1: business agenda
 async function getBusinessBookings(businessId, ownerId, { date, from, to } = {}) {
   const business = await prisma.business.findUnique({ where: { id: businessId } });
   if (!business) throw new Error('Business not found');
@@ -199,10 +214,13 @@ async function rescheduleBooking(id, clientId, { date, startTime }) {
       if (existing.status === 'CANCELLED') throw new Error('Cannot reschedule a cancelled booking');
 
       const { professionalId, service } = existing;
+      const { bufferTime, customDuration } = await getEffectiveTiming(tx, professionalId, existing.serviceId);
+      const effectiveDuration = customDuration ?? service.duration;
+
       const [rdy, rdm, rdd] = date.split('-').map(Number);
       const dayOfWeek = new Date(rdy, rdm - 1, rdd).getDay();
       const slotStart = toMinutes(startTime);
-      const slotEnd = slotStart + service.duration;
+      const slotEnd = slotStart + effectiveDuration;
       const endTime = toTime(slotEnd);
 
       const rwDate = new Date(rdy, rdm - 1, rdd);
@@ -240,14 +258,13 @@ async function rescheduleBooking(id, clientId, { date, startTime }) {
         .some((e) => overlaps(slotStart, slotEnd, toMinutes(e.startTime), toMinutes(e.endTime)));
       if (blockedByException) throw new Error('Slot overlaps with a blocked period');
 
-      const conflict = await tx.booking.findFirst({
-        where: {
-          professionalId,
-          date: localDate,
-          status: { not: 'CANCELLED' },
-          id: { not: id }, // exclude current booking
-          AND: [{ startTime: { lt: endTime } }, { endTime: { gt: startTime } }],
-        },
+      const existingBookings = await tx.booking.findMany({
+        where: { professionalId, date: localDate, status: { not: 'CANCELLED' }, id: { not: id } },
+      });
+      const conflict = existingBookings.some(b => {
+        const bStart = toMinutes(b.startTime);
+        const bEnd   = toMinutes(b.endTime) + bufferTime;
+        return overlaps(slotStart, slotEnd + bufferTime, bStart, bEnd);
       });
       if (conflict) throw new Error('Slot is no longer available');
 
