@@ -43,8 +43,9 @@ async function getMyBookings(userId) {
   return prisma.booking.findMany({
     where: { professionalId: prof.id, status: { not: 'CANCELLED' } },
     include: {
-      client:  { select: { id: true, name: true, email: true } },
-      service: { select: { id: true, name: true, duration: true, price: true } },
+      client:       { select: { id: true, name: true, email: true } },
+      professional: { select: { id: true, name: true } },
+      service:      { select: { id: true, name: true, duration: true, price: true } },
     },
     orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
   });
