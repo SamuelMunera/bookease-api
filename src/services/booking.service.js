@@ -88,8 +88,8 @@ async function createBooking({ clientId, professionalId, serviceId, date, startT
       });
       const conflict = existingBookings.some(b => {
         const bStart = toMinutes(b.startTime);
-        const bEnd   = toMinutes(b.endTime) + bufferTime;
-        return overlaps(slotStart, slotEnd + bufferTime, bStart, bEnd);
+        const bEnd   = toMinutes(b.endTime) + bufferTime; // existing booking blocks until end + buffer
+        return overlaps(slotStart, slotEnd, bStart, bEnd);
       });
       if (conflict) throw new Error('Slot is no longer available');
 
@@ -264,7 +264,7 @@ async function rescheduleBooking(id, clientId, { date, startTime }) {
       const conflict = existingBookings.some(b => {
         const bStart = toMinutes(b.startTime);
         const bEnd   = toMinutes(b.endTime) + bufferTime;
-        return overlaps(slotStart, slotEnd + bufferTime, bStart, bEnd);
+        return overlaps(slotStart, slotEnd, bStart, bEnd);
       });
       if (conflict) throw new Error('Slot is no longer available');
 

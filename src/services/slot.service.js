@@ -89,11 +89,13 @@ async function getAvailableSlots(professionalId, serviceId, dateStr) {
   const blocked = [...exceptionBlocks, ...bookingBlocks];
 
   // 6. Generate slots
+  // step = effectiveDuration + bufferTime so consecutive free slots already include the gap
+  const step = effectiveDuration + bufferTime;
   const slots = [];
-  for (let start = dayStart; start + effectiveDuration <= dayEnd; start += effectiveDuration) {
+  for (let start = dayStart; start + effectiveDuration <= dayEnd; start += step) {
     const end = start + effectiveDuration;
-    // Check slot [start, end + bufferTime] against blocked blocks
-    if (!blocked.some((b) => overlaps(start, end + bufferTime, b.start, b.end))) {
+    // Block if the slot (including trailing buffer) overlaps any blocked region
+    if (!blocked.some((b) => overlaps(start, end, b.start, b.end))) {
       slots.push({ startTime: toTime(start), endTime: toTime(end) });
     }
   }
