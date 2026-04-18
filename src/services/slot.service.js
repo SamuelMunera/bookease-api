@@ -87,17 +87,10 @@ async function getAvailableSlots(professionalId, serviceId, dateStr) {
 
   const blocked = [...exceptionBlocks, ...bookingBlocks];
 
-  // 5. Compute current-time cutoff (only blocks on today)
-  const nowUtc = new Date();
-  const todayUtcStr = `${nowUtc.getUTCFullYear()}-${String(nowUtc.getUTCMonth()+1).padStart(2,'0')}-${String(nowUtc.getUTCDate()).padStart(2,'0')}`;
-  const isToday = dateStr === todayUtcStr;
-  const nowMinutes = isToday ? nowUtc.getUTCHours() * 60 + nowUtc.getUTCMinutes() : -1;
-
-  // 6. Generate slots
+  // 5. Generate slots (past-time filtering is handled by the client with local time)
   const slots = [];
   for (let start = dayStart; start + duration <= dayEnd; start += duration) {
     const end = start + duration;
-    if (isToday && start <= nowMinutes) continue;
     if (!blocked.some((b) => overlaps(start, end, b.start, b.end))) {
       slots.push({ startTime: toTime(start), endTime: toTime(end) });
     }

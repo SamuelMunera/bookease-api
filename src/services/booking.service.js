@@ -13,12 +13,6 @@ async function createBooking({ clientId, professionalId, serviceId, date, startT
   const now = new Date();
   const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   if (localDate < today) throw new Error('Cannot book a past date');
-  const todayStr = `${now.getUTCFullYear()}-${String(now.getUTCMonth()+1).padStart(2,'0')}-${String(now.getUTCDate()).padStart(2,'0')}`;
-  if (date === todayStr) {
-    const nowMins = now.getUTCHours() * 60 + now.getUTCMinutes();
-    const [h, m] = startTime.split(':').map(Number);
-    if (h * 60 + m <= nowMins) throw new Error('Cannot book a slot that has already passed');
-  }
   const dayOfWeek = localDate.getDay();
 
   // FIX: assign result so email code is reachable
