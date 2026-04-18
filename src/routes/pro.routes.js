@@ -21,4 +21,8 @@ router.delete('/me/schedule/week/:weekStart', authenticate, requireRole('PROFESS
 router.post('/join',             authenticate, requireRole('PROFESSIONAL'), joinRequestController.submitJoinRequest);
 router.get('/me/join-request',   authenticate, requireRole('PROFESSIONAL'), joinRequestController.getMyJoinRequest);
 
+// Revenue (only if business allows it)
+const revenueController = require('../controllers/revenue.controller');
+router.get('/me/revenue', authenticate, requireRole('PROFESSIONAL'), revenueController.getProfessionalRevenue);
+
 module.exports = router;

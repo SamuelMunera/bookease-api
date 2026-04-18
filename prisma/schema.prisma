@@ -52,7 +52,8 @@ model Business {
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
 
-  joinCode      String?        @unique
+  joinCode           String?  @unique
+  showRevenueToProf  Boolean  @default(false)
   owner         User           @relation(fields: [ownerId], references: [id])
   professionals Professional[]
   services      Service[]

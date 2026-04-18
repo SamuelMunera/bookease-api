@@ -6,9 +6,6 @@ async function registerProfessional({ name, email, password, phone, specialty, b
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) throw new Error('Email already registered');
 
-  const business = await prisma.business.findUnique({ where: { id: businessId } });
-  if (!business) throw new Error('Business not found');
-
   const hashed = await bcrypt.hash(password, 10);
 
   const user = await prisma.user.create({
