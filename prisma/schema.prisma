@@ -13,6 +13,7 @@ enum Role {
   CLIENT
   BUSINESS_OWNER
   PROFESSIONAL
+  ADMIN
 }
 
 enum JoinRequestStatus {

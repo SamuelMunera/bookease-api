@@ -33,6 +33,7 @@ app.use('/api/businesses/:businessId/professionals/:professionalId/schedules', s
 app.use('/api/slots', slotRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/categories', categoryRoutes);
+app.use('/api/admin', require('./routes/admin.routes'));
 
 app.get('/health', (_, res) => res.json({ status: 'ok' }));
 
