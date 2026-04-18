@@ -13,7 +13,9 @@ async function createBooking({ clientId, professionalId, serviceId, date, startT
   const now = new Date();
   const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   if (localDate < today) throw new Error('Cannot book a past date');
-  const dayOfWeek = localDate.getDay();
+  // Parse dayOfWeek from the date string directly (avoids UTC-offset shifting the day)
+  const [_dy, _dm, _dd] = date.split('-').map(Number);
+  const dayOfWeek = new Date(_dy, _dm - 1, _dd).getDay();
 
   // FIX: assign result so email code is reachable
   const booking = await prisma.$transaction(
@@ -197,17 +199,35 @@ async function rescheduleBooking(id, clientId, { date, startTime }) {
       if (existing.status === 'CANCELLED') throw new Error('Cannot reschedule a cancelled booking');
 
       const { professionalId, service } = existing;
-      const dayOfWeek = localDate.getDay();
+      const [rdy, rdm, rdd] = date.split('-').map(Number);
+      const dayOfWeek = new Date(rdy, rdm - 1, rdd).getDay();
       const slotStart = toMinutes(startTime);
       const slotEnd = slotStart + service.duration;
       const endTime = toTime(slotEnd);
 
-      const schedule = await tx.schedule.findUnique({
-        where: { professionalId_dayOfWeek: { professionalId, dayOfWeek } },
+      const rwDate = new Date(rdy, rdm - 1, rdd);
+      const rwDiff = rwDate.getDay() === 0 ? -6 : 1 - rwDate.getDay();
+      rwDate.setDate(rwDate.getDate() + rwDiff);
+      const rWeekStart = new Date(Date.UTC(rwDate.getFullYear(), rwDate.getMonth(), rwDate.getDate()));
+
+      const rOverride = await tx.scheduleOverride.findUnique({
+        where: { professionalId_weekStart_dayOfWeek: { professionalId, weekStart: rWeekStart, dayOfWeek } },
       });
-      if (!schedule || !schedule.isActive)
-        throw new Error('Professional not available on this day');
-      if (slotStart < toMinutes(schedule.startTime) || slotEnd > toMinutes(schedule.endTime))
+      let rIsActive, rDayStart, rDayEnd;
+      if (rOverride) {
+        rIsActive = rOverride.isActive;
+        rDayStart = toMinutes(rOverride.startTime);
+        rDayEnd   = toMinutes(rOverride.endTime);
+      } else {
+        const schedule = await tx.schedule.findUnique({
+          where: { professionalId_dayOfWeek: { professionalId, dayOfWeek } },
+        });
+        rIsActive = schedule?.isActive ?? false;
+        rDayStart = schedule ? toMinutes(schedule.startTime) : 0;
+        rDayEnd   = schedule ? toMinutes(schedule.endTime)   : 0;
+      }
+      if (!rIsActive) throw new Error('Professional not available on this day');
+      if (slotStart < rDayStart || slotEnd > rDayEnd)
         throw new Error('Slot is outside working hours');
 
       const exceptions = await tx.scheduleException.findMany({
