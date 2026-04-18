@@ -4,7 +4,7 @@ const emailService = require('./email.service');
 
 const BOOKING_INCLUDE = {
   client: { select: { id: true, name: true, email: true } },
-  professional: { select: { id: true, name: true } },
+  professional: { select: { id: true, name: true, user: { select: { email: true } } } },
   service: { select: { id: true, name: true, duration: true, price: true } },
 };
 
@@ -102,7 +102,7 @@ async function createBooking({ clientId, professionalId, serviceId, date, startT
   );
 
   emailService
-    .sendConfirmation({ ...booking, clientName: booking.client.name }, booking.client.email)
+    .sendConfirmation({ ...booking, clientName: booking.client.name }, booking.client.email, booking.professional.user?.email)
     .catch((err) => console.error('[email] confirmation failed:', err.message));
 
   return booking;
@@ -129,7 +129,7 @@ async function cancelBooking(id, clientId) {
   });
 
   emailService
-    .sendCancellation({ ...cancelled, clientName: cancelled.client.name }, cancelled.client.email)
+    .sendCancellation({ ...cancelled, clientName: cancelled.client.name }, cancelled.client.email, cancelled.professional.user?.email)
     .catch((err) => console.error('[email] cancellation failed:', err.message));
 
   return cancelled;
@@ -169,7 +169,7 @@ async function cancelBookingAsOwner(id, ownerId) {
   });
 
   emailService
-    .sendCancellation({ ...cancelled, clientName: cancelled.client.name }, cancelled.client.email)
+    .sendCancellation({ ...cancelled, clientName: cancelled.client.name }, cancelled.client.email, cancelled.professional.user?.email)
     .catch((err) => console.error('[email] cancellation failed:', err.message));
 
   return cancelled;

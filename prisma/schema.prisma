@@ -15,12 +15,6 @@ enum Role {
   PROFESSIONAL
 }
 
-enum BusinessCategory {
-  BARBERSHOP
-  SPA
-  SALON
-}
-
 enum JoinRequestStatus {
   PENDING
   APPROVED
@@ -48,7 +42,7 @@ model Business {
   address     String
   city        String
   phone       String?
-  category    BusinessCategory
+  category    String
   ownerId     String
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
@@ -184,6 +178,14 @@ model Booking {
   professional Professional @relation(fields: [professionalId], references: [id])
   service      Service      @relation(fields: [serviceId], references: [id])
   client       User         @relation(fields: [clientId], references: [id])
+}
+
+model Category {
+  id        String   @id @default(dbgenerated("gen_random_uuid()"))
+  name      String
+  slug      String   @unique
+  icon      String?
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
 }
 
 // Blocks a specific date (full day or time range)

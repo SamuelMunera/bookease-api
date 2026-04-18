@@ -10,7 +10,8 @@ const professionalController = require('./controllers/professional.controller');
 const serviceRoutes = require('./routes/service.routes');
 const scheduleRoutes = require('./routes/schedule.routes');
 const slotRoutes = require('./routes/slot.routes');
-const bookingRoutes = require('./routes/booking.routes');
+const bookingRoutes   = require('./routes/booking.routes');
+const categoryRoutes  = require('./routes/category.routes');
 
 const app = express();
 
@@ -31,6 +32,7 @@ app.use('/api/businesses/:businessId/services', serviceRoutes);
 app.use('/api/businesses/:businessId/professionals/:professionalId/schedules', scheduleRoutes);
 app.use('/api/slots', slotRoutes);
 app.use('/api/bookings', bookingRoutes);
+app.use('/api/categories', categoryRoutes);
 
 app.get('/health', (_, res) => res.json({ status: 'ok' }));
 
