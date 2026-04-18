@@ -36,6 +36,7 @@ async function getMyProfile(userId) {
     },
   });
 }
+// bufferTime is included in the Professional model by default
 
 async function getMyBookings(userId) {
   const prof = await prisma.professional.findUnique({ where: { userId } });
@@ -159,4 +160,35 @@ async function remove(id) {
   return prisma.professional.delete({ where: { id } });
 }
 
-module.exports = { registerProfessional, getMyProfile, getMyBookings, getMyServices, setMyServices, getMySchedule, setMySchedule, getWeekSchedule, setWeekSchedule, deleteWeekSchedule, create, findByBusiness, findById, update, remove };
+async function getServiceConfigs(userId) {
+  const prof = await prisma.professional.findUnique({ where: { userId } });
+  if (!prof) throw new Error('Professional profile not found');
+  return prisma.professionalServiceConfig.findMany({ where: { professionalId: prof.id } });
+}
+
+async function saveServiceConfigs(userId, configs) {
+  // configs = [{ serviceId, customDuration }]
+  const prof = await prisma.professional.findUnique({ where: { userId } });
+  if (!prof) throw new Error('Professional profile not found');
+  await Promise.all(
+    configs.map(({ serviceId, customDuration }) =>
+      prisma.professionalServiceConfig.upsert({
+        where: { professionalId_serviceId: { professionalId: prof.id, serviceId } },
+        create: { professionalId: prof.id, serviceId, customDuration: customDuration || null },
+        update: { customDuration: customDuration || null },
+      })
+    )
+  );
+  return prisma.professionalServiceConfig.findMany({ where: { professionalId: prof.id } });
+}
+
+async function updateBufferTime(userId, bufferTime) {
+  const prof = await prisma.professional.findUnique({ where: { userId } });
+  if (!prof) throw new Error('Professional profile not found');
+  return prisma.professional.update({
+    where: { id: prof.id },
+    data: { bufferTime: Math.max(0, parseInt(bufferTime, 10) || 0) },
+  });
+}
+
+module.exports = { registerProfessional, getMyProfile, getMyBookings, getMyServices, setMyServices, getMySchedule, setMySchedule, getWeekSchedule, setWeekSchedule, deleteWeekSchedule, create, findByBusiness, findById, update, remove, getServiceConfigs, saveServiceConfigs, updateBufferTime };

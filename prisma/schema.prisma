@@ -69,17 +69,33 @@ model Professional {
   experience String?
   businessId String?
   userId     String?  @unique
+  bufferTime Int      @default(0)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  business           Business?           @relation(fields: [businessId], references: [id])
-  user               User?               @relation(fields: [userId], references: [id])
+  business           Business?                  @relation(fields: [businessId], references: [id])
+  user               User?                      @relation(fields: [userId], references: [id])
   schedules          Schedule[]
   scheduleExceptions ScheduleException[]
   scheduleOverrides  ScheduleOverride[]
   bookings           Booking[]
   services           Service[]
   joinRequests       JoinRequest[]
+  serviceConfigs     ProfessionalServiceConfig[]
+}
+
+model ProfessionalServiceConfig {
+  id             String   @id @default(cuid())
+  professionalId String
+  serviceId      String
+  customDuration Int?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  professional Professional @relation(fields: [professionalId], references: [id])
+  service      Service      @relation(fields: [serviceId], references: [id])
+
+  @@unique([professionalId, serviceId])
 }
 
 model JoinRequest {
@@ -106,9 +122,10 @@ model Service {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  business      Business       @relation(fields: [businessId], references: [id])
-  bookings      Booking[]
-  professionals Professional[]
+  business       Business                    @relation(fields: [businessId], references: [id])
+  bookings       Booking[]
+  professionals  Professional[]
+  serviceConfigs ProfessionalServiceConfig[]
 }
 
 // Weekly recurring availability per professional

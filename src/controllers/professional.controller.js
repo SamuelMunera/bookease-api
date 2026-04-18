@@ -144,4 +144,25 @@ async function getProfessionalServices(req, res) {
   } catch (err) { res.status(500).json({ error: err.message }); }
 }
 
-module.exports = { register, getMe, getMyBookings, getMyServices, setMyServices, getMySchedule, setMySchedule, getWeekSchedule, setWeekSchedule, deleteWeekSchedule, getProfessionalServices, create, findByBusiness, findById, update, remove };
+async function getServiceConfigs(req, res) {
+  try {
+    const configs = await professionalService.getServiceConfigs(req.user.id);
+    res.json(configs);
+  } catch (err) { res.status(400).json({ error: err.message }); }
+}
+
+async function saveServiceConfigs(req, res) {
+  try {
+    const configs = await professionalService.saveServiceConfigs(req.user.id, req.body.configs ?? []);
+    res.json(configs);
+  } catch (err) { res.status(400).json({ error: err.message }); }
+}
+
+async function updateBufferTime(req, res) {
+  try {
+    const pro = await professionalService.updateBufferTime(req.user.id, req.body.bufferTime);
+    res.json({ bufferTime: pro.bufferTime });
+  } catch (err) { res.status(400).json({ error: err.message }); }
+}
+
+module.exports = { register, getMe, getMyBookings, getMyServices, setMyServices, getMySchedule, setMySchedule, getWeekSchedule, setWeekSchedule, deleteWeekSchedule, getProfessionalServices, create, findByBusiness, findById, update, remove, getServiceConfigs, saveServiceConfigs, updateBufferTime };
