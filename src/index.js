@@ -14,7 +14,11 @@ const bookingRoutes = require('./routes/booking.routes');
 
 const app = express();
 
-app.use(cors());
+const allowedOrigins = process.env.ALLOWED_ORIGIN
+  ? process.env.ALLOWED_ORIGIN.split(',')
+  : ['http://localhost:5173', 'http://localhost:3000'];
+
+app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
 
 app.use('/api/auth', authRoutes);
