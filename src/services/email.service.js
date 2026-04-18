@@ -1,4 +1,4 @@
-const { resend, FROM } = require('../config/email');
+const { getResend, FROM } = require('../config/email');
 
 function formatDate(date) {
   return new Date(date).toLocaleDateString('es-CO', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
@@ -34,7 +34,7 @@ function cancellationHtml({ clientName, professionalName, serviceName, date, sta
 }
 
 async function sendConfirmation(booking, clientEmail) {
-  await resend.emails.send({
+  await getResend().emails.send({
     from: FROM,
     to: clientEmail,
     subject: `Reserva confirmada – ${booking.service.name}`,
@@ -50,7 +50,7 @@ async function sendConfirmation(booking, clientEmail) {
 }
 
 async function sendCancellation(booking, clientEmail) {
-  await resend.emails.send({
+  await getResend().emails.send({
     from: FROM,
     to: clientEmail,
     subject: `Reserva cancelada – ${booking.service.name}`,
