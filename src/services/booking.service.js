@@ -26,8 +26,12 @@ async function createBooking({ clientId, professionalId, serviceId, date, startT
       const endTime = toTime(slotEnd);
 
       // Check override first, then fall back to recurring schedule (mirrors slot.service logic)
-      const { getWeekStartStr, parseLocalDate: pld } = require('./slot.service');
-      const weekStart = pld(getWeekStartStr(date));
+      const [wy, wm, wd] = date.split('-').map(Number);
+      const wDate = new Date(wy, wm - 1, wd);
+      const wDow = wDate.getDay();
+      const wDiff = wDow === 0 ? -6 : 1 - wDow;
+      wDate.setDate(wDate.getDate() + wDiff);
+      const weekStart = new Date(Date.UTC(wDate.getFullYear(), wDate.getMonth(), wDate.getDate()));
       const override = await tx.scheduleOverride.findUnique({
         where: { professionalId_weekStart_dayOfWeek: { professionalId, weekStart, dayOfWeek } },
       });
