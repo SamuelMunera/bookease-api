@@ -20,6 +20,12 @@ enum BusinessCategory {
   SALON
 }
 
+enum JoinRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 model User {
   id        String   @id @default(cuid())
   email     String   @unique
@@ -46,9 +52,11 @@ model Business {
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
 
+  joinCode      String?        @unique
   owner         User           @relation(fields: [ownerId], references: [id])
   professionals Professional[]
   services      Service[]
+  joinRequests  JoinRequest[]
 }
 
 model Professional {
@@ -58,18 +66,33 @@ model Professional {
   phone      String?
   specialty  String?
   experience String?
-  businessId String
+  businessId String?
   userId     String?  @unique
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  business           Business            @relation(fields: [businessId], references: [id])
+  business           Business?           @relation(fields: [businessId], references: [id])
   user               User?               @relation(fields: [userId], references: [id])
   schedules          Schedule[]
   scheduleExceptions ScheduleException[]
   scheduleOverrides  ScheduleOverride[]
   bookings           Booking[]
   services           Service[]
+  joinRequests       JoinRequest[]
+}
+
+model JoinRequest {
+  id             String            @id @default(cuid())
+  professionalId String
+  businessId     String
+  status         JoinRequestStatus @default(PENDING)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  professional   Professional      @relation(fields: [professionalId], references: [id])
+  business       Business          @relation(fields: [businessId], references: [id])
+
+  @@unique([professionalId, businessId])
 }
 
 model Service {

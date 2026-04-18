@@ -15,7 +15,7 @@ async function registerProfessional({ name, email, password, phone, specialty, b
     data: {
       name, email, password: hashed, role: 'PROFESSIONAL',
       professional: {
-        create: { name, phone, specialty, bio, experience, businessId },
+        create: { name, phone, specialty, bio, experience, ...(businessId ? { businessId } : {}) },
       },
     },
     select: {

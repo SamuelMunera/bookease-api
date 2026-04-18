@@ -1,5 +1,6 @@
 const router = require('express').Router();
 const professionalController = require('../controllers/professional.controller');
+const joinRequestController  = require('../controllers/joinRequest.controller');
 const { authenticate, requireRole } = require('../middleware/auth');
 
 // Public
@@ -15,5 +16,9 @@ router.put('/me/schedule',                    authenticate, requireRole('PROFESS
 router.get('/me/schedule/week/:weekStart',    authenticate, requireRole('PROFESSIONAL'), professionalController.getWeekSchedule);
 router.put('/me/schedule/week/:weekStart',    authenticate, requireRole('PROFESSIONAL'), professionalController.setWeekSchedule);
 router.delete('/me/schedule/week/:weekStart', authenticate, requireRole('PROFESSIONAL'), professionalController.deleteWeekSchedule);
+
+// Join requests
+router.post('/join',             authenticate, requireRole('PROFESSIONAL'), joinRequestController.submitJoinRequest);
+router.get('/me/join-request',   authenticate, requireRole('PROFESSIONAL'), joinRequestController.getMyJoinRequest);
 
 module.exports = router;
