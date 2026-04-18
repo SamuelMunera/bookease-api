@@ -25,13 +25,29 @@ async function createBooking({ clientId, professionalId, serviceId, date, startT
       const slotEnd = slotStart + service.duration;
       const endTime = toTime(slotEnd);
 
-      const schedule = await tx.schedule.findUnique({
-        where: { professionalId_dayOfWeek: { professionalId, dayOfWeek } },
+      // Check override first, then fall back to recurring schedule (mirrors slot.service logic)
+      const { getWeekStartStr, parseLocalDate: pld } = require('./slot.service');
+      const weekStart = pld(getWeekStartStr(date));
+      const override = await tx.scheduleOverride.findUnique({
+        where: { professionalId_weekStart_dayOfWeek: { professionalId, weekStart, dayOfWeek } },
       });
-      if (!schedule || !schedule.isActive)
-        throw new Error('Professional not available on this day');
 
-      if (slotStart < toMinutes(schedule.startTime) || slotEnd > toMinutes(schedule.endTime))
+      let dayStartMin, dayEndMin, isActive;
+      if (override) {
+        isActive   = override.isActive;
+        dayStartMin = toMinutes(override.startTime);
+        dayEndMin   = toMinutes(override.endTime);
+      } else {
+        const schedule = await tx.schedule.findUnique({
+          where: { professionalId_dayOfWeek: { professionalId, dayOfWeek } },
+        });
+        isActive   = schedule?.isActive ?? false;
+        dayStartMin = schedule ? toMinutes(schedule.startTime) : 0;
+        dayEndMin   = schedule ? toMinutes(schedule.endTime)   : 0;
+      }
+
+      if (!isActive) throw new Error('Professional not available on this day');
+      if (slotStart < dayStartMin || slotEnd > dayEndMin)
         throw new Error('Slot is outside working hours');
 
       const exceptions = await tx.scheduleException.findMany({
