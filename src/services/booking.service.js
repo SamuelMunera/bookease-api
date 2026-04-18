@@ -1,10 +1,9 @@
 const prisma = require('../config/database');
 const { toMinutes, toTime, parseLocalDate, overlaps } = require('./slot.service');
-const emailService = require('./email.service');
 
 const BOOKING_INCLUDE = {
   client: { select: { id: true, name: true, email: true } },
-  professional: { select: { id: true, name: true, user: { select: { email: true } } } },
+  professional: { select: { id: true, name: true } },
   service: { select: { id: true, name: true, duration: true, price: true } },
 };
 
@@ -101,9 +100,6 @@ async function createBooking({ clientId, professionalId, serviceId, date, startT
     { isolationLevel: 'Serializable' }
   );
 
-  emailService
-    .sendConfirmation({ ...booking, clientName: booking.client.name }, booking.client.email, booking.professional.user?.email)
-    .catch((err) => console.error('[email] confirmation failed:', err.message));
 
   return booking;
 }
@@ -128,9 +124,6 @@ async function cancelBooking(id, clientId) {
     include: BOOKING_INCLUDE,
   });
 
-  emailService
-    .sendCancellation({ ...cancelled, clientName: cancelled.client.name }, cancelled.client.email, cancelled.professional.user?.email)
-    .catch((err) => console.error('[email] cancellation failed:', err.message));
 
   return cancelled;
 }
@@ -168,9 +161,6 @@ async function cancelBookingAsOwner(id, ownerId) {
     include: BOOKING_INCLUDE,
   });
 
-  emailService
-    .sendCancellation({ ...cancelled, clientName: cancelled.client.name }, cancelled.client.email, cancelled.professional.user?.email)
-    .catch((err) => console.error('[email] cancellation failed:', err.message));
 
   return cancelled;
 }
@@ -189,10 +179,6 @@ async function confirmBooking(id, ownerId) {
     data: { status: 'CONFIRMED' },
     include: BOOKING_INCLUDE,
   });
-
-  emailService
-    .sendConfirmation({ ...confirmed, clientName: confirmed.client.name }, confirmed.client.email)
-    .catch((err) => console.error('[email] confirmation failed:', err.message));
 
   return confirmed;
 }
@@ -277,9 +263,6 @@ async function rescheduleBooking(id, clientId, { date, startTime }) {
     { isolationLevel: 'Serializable' }
   );
 
-  emailService
-    .sendConfirmation({ ...rescheduled, clientName: rescheduled.client.name }, rescheduled.client.email)
-    .catch((err) => console.error('[email] reschedule confirmation failed:', err.message));
 
   return rescheduled;
 }
