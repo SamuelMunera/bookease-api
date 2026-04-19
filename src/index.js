@@ -81,10 +81,13 @@ app.use((_req, res) => res.status(404).json({ error: 'Not found' }));
 
 // Global error handler — never leak stack traces
 app.use((err, _req, res, _next) => {
-  console.error(err);
-  if (err.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ error: 'Archivo demasiado grande (máx 3 MB)' });
+  console.error(err.message || err);
+  if (err.code === 'LIMIT_FILE_SIZE' || err.type === 'entity.too.large') {
+    return res.status(413).json({ error: 'Payload demasiado grande' });
+  }
   if (err.message && err.message.startsWith('Solo se permiten')) return res.status(400).json({ error: err.message });
-  res.status(500).json({ error: 'Internal server error' });
+  const status = err.status || err.statusCode || 500;
+  res.status(status < 400 || status > 599 ? 500 : status).json({ error: 'Internal server error' });
 });
 
 if (require.main === module) {

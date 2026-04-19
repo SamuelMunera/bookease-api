@@ -21,7 +21,7 @@ async function getMe(req, res) {
     if (!prof) return res.status(404).json({ error: 'Profile not found' });
     res.json(prof);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 }
 
@@ -30,7 +30,7 @@ async function getMyBookings(req, res) {
     const bookings = await professionalService.getMyBookings(req.user.id);
     res.json(bookings);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 }
 
@@ -38,7 +38,7 @@ async function getMyServices(req, res) {
   try {
     const services = await professionalService.getMyServices(req.user.id);
     res.json(services);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
 }
 
 async function setMyServices(req, res) {
@@ -54,7 +54,7 @@ async function getMySchedule(req, res) {
   try {
     const schedule = await professionalService.getMySchedule(req.user.id);
     res.json(schedule);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
 }
 
 async function setMySchedule(req, res) {
@@ -80,7 +80,7 @@ async function findByBusiness(req, res) {
     const professionals = await professionalService.findByBusiness(req.params.businessId);
     res.json(professionals);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 }
 
@@ -110,7 +110,7 @@ async function findById(req, res) {
     if (!prof) return res.status(404).json({ error: 'Professional not found' });
     res.json(prof);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 }
 
@@ -118,7 +118,7 @@ async function getWeekSchedule(req, res) {
   try {
     const data = await professionalService.getWeekSchedule(req.user.id, req.params.weekStart);
     res.json(data);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
 }
 
 async function setWeekSchedule(req, res) {
@@ -145,7 +145,7 @@ async function getProfessionalServices(req, res) {
     });
     if (!prof) return res.status(404).json({ error: 'Professional not found' });
     res.json(prof.services);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
 }
 
 async function getServiceConfigs(req, res) {
@@ -184,14 +184,14 @@ async function uploadAvatar(req, res) {
     const url = await uploadFile(req.file.buffer, req.file.mimetype, path);
     const prof = await professionalService.updateProfile(req.user.id, { avatarUrl: url });
     res.json({ url, professional: prof });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
 }
 
 async function getPhotos(req, res) {
   try {
     const photos = await professionalService.getPhotos(req.user.id);
     res.json(photos);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
 }
 
 async function uploadPhoto(req, res) {
@@ -203,7 +203,7 @@ async function uploadPhoto(req, res) {
     const caption = req.body.caption ? String(req.body.caption).slice(0, 200) : undefined;
     const photo = await professionalService.addPhoto(req.user.id, url, caption);
     res.status(201).json(photo);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
 }
 
 async function deletePhoto(req, res) {

@@ -31,7 +31,7 @@ async function myBookings(req, res) {
     const bookings = await bookingService.getUserBookings(req.user.id);
     res.json(bookings);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 }
 

@@ -16,7 +16,7 @@ async function findAll(req, res) {
     const businesses = await businessService.findAll(req.query);
     res.json(businesses);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 }
 
@@ -26,7 +26,7 @@ async function findById(req, res) {
     if (!business) return res.status(404).json({ error: 'Not found' });
     res.json(business);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 }
 
@@ -36,7 +36,7 @@ async function getMe(req, res) {
     if (!business) return res.status(404).json({ error: 'No tienes un negocio registrado' });
     res.json(business);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 }
 
@@ -58,7 +58,7 @@ async function uploadLogo(req, res) {
     const business = await businessService.updateProfile(req.user.id, { logoUrl: url });
     res.json({ url, business });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 }
 

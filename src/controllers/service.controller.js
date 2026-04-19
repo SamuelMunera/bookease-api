@@ -24,7 +24,7 @@ async function findByBusiness(req, res) {
     const services = await serviceService.findByBusiness(req.params.businessId);
     res.json(services);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 }
 

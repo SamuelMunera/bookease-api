@@ -20,14 +20,14 @@ async function getMyJoinRequest(req, res) {
   try {
     const result = await svc.getMyJoinRequest(req.user.id);
     res.json(result ?? null);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
 }
 
 async function getBusinessJoinRequests(req, res) {
   try {
     const requests = await svc.getBusinessJoinRequests(req.user.id);
     res.json(requests);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
 }
 
 async function approveRequest(req, res) {

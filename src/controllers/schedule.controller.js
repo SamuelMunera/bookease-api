@@ -14,7 +14,7 @@ async function getSchedules(req, res) {
     const schedules = await scheduleService.getSchedules(req.params.professionalId);
     res.json(schedules);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 }
 
@@ -41,7 +41,7 @@ async function getExceptions(req, res) {
     const exceptions = await scheduleService.getExceptions(req.params.professionalId);
     res.json(exceptions);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 }
 

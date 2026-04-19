@@ -38,7 +38,7 @@ async function forgotPassword(req, res) {
     await authService.forgotPassword(email);
     res.json({ ok: true, message: 'Si el correo existe, recibirás un enlace de recuperación.' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 }
 
