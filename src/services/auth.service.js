@@ -4,13 +4,13 @@ const crypto = require('crypto');
 const prisma = require('../config/database');
 const { getResend, FROM } = require('../config/email');
 
-async function register({ name, email, password, role }) {
+async function register({ name, email, password, role, phone }) {
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) throw new Error('Email already registered');
 
   const hashed = await bcrypt.hash(password, 10);
   const user = await prisma.user.create({
-    data: { name, email, password: hashed, role },
+    data: { name, email, password: hashed, role, ...(phone ? { phone } : {}) },
     select: { id: true, name: true, email: true, role: true },
   });
 
