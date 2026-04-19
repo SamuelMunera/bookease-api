@@ -44,6 +44,31 @@ router.get('/businesses', async (_req, res) => {
   }
 });
 
+router.get('/categories', async (_req, res) => {
+  try {
+    const cats = await prisma.category.findMany({ orderBy: { name: 'asc' } });
+    res.json(cats);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/categories', async (req, res) => {
+  try {
+    const { name, slug, icon } = req.body;
+    if (!name || !slug) return res.status(400).json({ error: 'name y slug son requeridos' });
+    const existing = await prisma.category.findUnique({ where: { slug } });
+    if (existing) return res.status(400).json({ error: 'Ya existe una categoría con ese slug' });
+    const cat = await prisma.category.create({ data: { name, slug: slug.toLowerCase().trim(), icon } });
+    res.status(201).json(cat);
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+router.delete('/categories/:id', async (req, res) => {
+  try {
+    await prisma.category.delete({ where: { id: req.params.id } });
+    res.status(204).send();
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
 router.get('/professionals', async (_req, res) => {
   try {
     const professionals = await prisma.professional.findMany({
