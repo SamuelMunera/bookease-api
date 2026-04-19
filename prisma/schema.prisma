@@ -37,6 +37,7 @@ model User {
   bookings            Booking[]
   professional        Professional?
   passwordResetTokens PasswordResetToken[]
+  reviews             Review[]
 }
 
 model PasswordResetToken {
@@ -69,6 +70,7 @@ model Business {
   professionals Professional[]
   services      Service[]
   joinRequests  JoinRequest[]
+  reviews       Review[]
 }
 
 model Professional {
@@ -95,6 +97,7 @@ model Professional {
   joinRequests       JoinRequest[]
   serviceConfigs     ProfessionalServiceConfig[]
   photos             ProfessionalPhoto[]
+  reviews            Review[]
 }
 
 model ProfessionalPhoto {
@@ -214,6 +217,33 @@ model Category {
   slug      String   @unique
   icon      String?
   createdAt DateTime @default(now()) @db.Timestamptz(6)
+}
+
+model Review {
+  id             String   @id @default(cuid())
+  rating         Int
+  comment        String?
+  authorId       String
+  businessId     String?
+  professionalId String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  author       User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  business     Business?     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  professional Professional? @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+
+  @@unique([authorId, businessId])
+  @@unique([authorId, professionalId])
+}
+
+model FeedbackReport {
+  id          String   @id @default(cuid())
+  type        String
+  description String
+  page        String?
+  userEmail   String?
+  createdAt   DateTime @default(now())
 }
 
 // Blocks a specific date (full day or time range)
