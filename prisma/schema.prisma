@@ -92,6 +92,17 @@ model Professional {
   services           Service[]
   joinRequests       JoinRequest[]
   serviceConfigs     ProfessionalServiceConfig[]
+  photos             ProfessionalPhoto[]
+}
+
+model ProfessionalPhoto {
+  id             String   @id @default(cuid())
+  professionalId String
+  url            String
+  caption        String?
+  createdAt      DateTime @default(now())
+
+  professional Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade)
 }
 
 model ProfessionalServiceConfig {

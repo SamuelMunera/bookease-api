@@ -184,6 +184,31 @@ async function uploadAvatar(req, res) {
   } catch (err) { res.status(500).json({ error: err.message }); }
 }
 
+async function getPhotos(req, res) {
+  try {
+    const photos = await professionalService.getPhotos(req.user.id);
+    res.json(photos);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+}
+
+async function uploadPhoto(req, res) {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No se recibió ningún archivo' });
+    const ext = req.file.mimetype.split('/')[1] || 'jpg';
+    const path = `professionals/${req.user.id}/gallery/${Date.now()}.${ext}`;
+    const url = await uploadFile(req.file.buffer, req.file.mimetype, path);
+    const photo = await professionalService.addPhoto(req.user.id, url, req.body.caption);
+    res.status(201).json(photo);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+}
+
+async function deletePhoto(req, res) {
+  try {
+    await professionalService.deletePhoto(req.user.id, req.params.photoId);
+    res.status(204).send();
+  } catch (err) { res.status(400).json({ error: err.message }); }
+}
+
 async function unlinkBusiness(req, res) {
   try {
     const prof = await professionalService.unlinkBusiness(req.user.id);
@@ -191,4 +216,4 @@ async function unlinkBusiness(req, res) {
   } catch (err) { res.status(400).json({ error: err.message }); }
 }
 
-module.exports = { register, getMe, getMyBookings, getMyServices, setMyServices, getMySchedule, setMySchedule, getWeekSchedule, setWeekSchedule, deleteWeekSchedule, getProfessionalServices, create, findByBusiness, findById, update, remove, getServiceConfigs, saveServiceConfigs, updateBufferTime, updateProfile, uploadAvatar, unlinkBusiness };
+module.exports = { register, getMe, getMyBookings, getMyServices, setMyServices, getMySchedule, setMySchedule, getWeekSchedule, setWeekSchedule, deleteWeekSchedule, getProfessionalServices, create, findByBusiness, findById, update, remove, getServiceConfigs, saveServiceConfigs, updateBufferTime, updateProfile, uploadAvatar, unlinkBusiness, getPhotos, uploadPhoto, deletePhoto };

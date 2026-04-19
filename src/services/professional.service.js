@@ -148,7 +148,10 @@ async function findByBusiness(businessId) {
 async function findById(id) {
   return prisma.professional.findUnique({
     where: { id },
-    include: { business: { select: { id: true, name: true } } },
+    include: {
+      business: { select: { id: true, name: true } },
+      photos: { orderBy: { createdAt: 'desc' } },
+    },
   });
 }
 
@@ -199,6 +202,33 @@ async function updateProfile(userId, data) {
   return prisma.professional.update({ where: { id: prof.id }, data: clean });
 }
 
+async function getPhotos(userId) {
+  const prof = await prisma.professional.findUnique({ where: { userId } });
+  if (!prof) throw new Error('Professional profile not found');
+  return prisma.professionalPhoto.findMany({
+    where: { professionalId: prof.id },
+    orderBy: { createdAt: 'desc' },
+  });
+}
+
+async function addPhoto(userId, url, caption) {
+  const prof = await prisma.professional.findUnique({ where: { userId } });
+  if (!prof) throw new Error('Professional profile not found');
+  return prisma.professionalPhoto.create({
+    data: { professionalId: prof.id, url, caption: caption || null },
+  });
+}
+
+async function deletePhoto(userId, photoId) {
+  const prof = await prisma.professional.findUnique({ where: { userId } });
+  if (!prof) throw new Error('Professional profile not found');
+  const photo = await prisma.professionalPhoto.findFirst({
+    where: { id: photoId, professionalId: prof.id },
+  });
+  if (!photo) throw new Error('Foto no encontrada');
+  await prisma.professionalPhoto.delete({ where: { id: photoId } });
+}
+
 async function unlinkBusiness(userId) {
   const prof = await prisma.professional.findUnique({ where: { userId } });
   if (!prof) throw new Error('Professional profile not found');
@@ -209,4 +239,4 @@ async function unlinkBusiness(userId) {
   });
 }
 
-module.exports = { registerProfessional, getMyProfile, getMyBookings, getMyServices, setMyServices, getMySchedule, setMySchedule, getWeekSchedule, setWeekSchedule, deleteWeekSchedule, create, findByBusiness, findById, update, remove, getServiceConfigs, saveServiceConfigs, updateBufferTime, updateProfile, unlinkBusiness };
+module.exports = { registerProfessional, getMyProfile, getMyBookings, getMyServices, setMyServices, getMySchedule, setMySchedule, getWeekSchedule, setWeekSchedule, deleteWeekSchedule, create, findByBusiness, findById, update, remove, getServiceConfigs, saveServiceConfigs, updateBufferTime, updateProfile, unlinkBusiness, getPhotos, addPhoto, deletePhoto };

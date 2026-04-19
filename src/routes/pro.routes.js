@@ -9,9 +9,12 @@ router.post('/register', professionalController.register);
 
 // Authenticated professional
 router.get('/me',                authenticate, requireRole('PROFESSIONAL'), professionalController.getMe);
-router.patch('/me/profile',      authenticate, requireRole('PROFESSIONAL'), professionalController.updateProfile);
-router.post('/me/avatar',        authenticate, requireRole('PROFESSIONAL'), upload.single('file'), professionalController.uploadAvatar);
-router.delete('/me/business',    authenticate, requireRole('PROFESSIONAL'), professionalController.unlinkBusiness);
+router.patch('/me/profile',            authenticate, requireRole('PROFESSIONAL'), professionalController.updateProfile);
+router.post('/me/avatar',              authenticate, requireRole('PROFESSIONAL'), upload.single('file'), professionalController.uploadAvatar);
+router.delete('/me/business',          authenticate, requireRole('PROFESSIONAL'), professionalController.unlinkBusiness);
+router.get('/me/photos',               authenticate, requireRole('PROFESSIONAL'), professionalController.getPhotos);
+router.post('/me/photos',              authenticate, requireRole('PROFESSIONAL'), upload.single('file'), professionalController.uploadPhoto);
+router.delete('/me/photos/:photoId',   authenticate, requireRole('PROFESSIONAL'), professionalController.deletePhoto);
 router.get('/me/bookings',       authenticate, requireRole('PROFESSIONAL'), professionalController.getMyBookings);
 router.get('/me/services',       authenticate, requireRole('PROFESSIONAL'), professionalController.getMyServices);
 router.put('/me/services',       authenticate, requireRole('PROFESSIONAL'), professionalController.setMyServices);
