@@ -109,4 +109,58 @@ async function resetPassword(token, newPassword) {
   ]);
 }
 
-module.exports = { register, login, changePassword, forgotPassword, resetPassword };
+async function googleAuth(accessToken, role = 'CLIENT') {
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+
+  // Validate token with Google and fetch user info in parallel
+  const [tokenInfo, userInfo] = await Promise.all([
+    fetch(`https://oauth2.googleapis.com/tokeninfo?access_token=${accessToken}`).then(r => r.json()),
+    fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }).then(r => r.json()),
+  ]);
+
+  if (tokenInfo.error || (clientId && tokenInfo.aud !== clientId && tokenInfo.azp !== clientId)) {
+    throw new Error('Token de Google inválido');
+  }
+
+  const { sub: googleId, email, name } = userInfo;
+  const VALID_ROLES = ['CLIENT', 'PROFESSIONAL', 'BUSINESS_OWNER'];
+  const effectiveRole = VALID_ROLES.includes(role?.toUpperCase()) ? role.toUpperCase() : 'CLIENT';
+
+  let user = await prisma.user.findUnique({
+    where: { googleId },
+    select: { id: true, name: true, email: true, role: true },
+  });
+  let isNew = false;
+
+  if (!user) {
+    const byEmail = await prisma.user.findUnique({ where: { email } });
+    if (byEmail) {
+      user = await prisma.user.update({
+        where: { id: byEmail.id },
+        data: { googleId },
+        select: { id: true, name: true, email: true, role: true },
+      });
+    } else {
+      isNew = true;
+      user = await prisma.user.create({
+        data: {
+          email, name, googleId, role: effectiveRole,
+          password: 'GOOGLE_' + crypto.randomBytes(16).toString('hex'),
+        },
+        select: { id: true, name: true, email: true, role: true },
+      });
+      if (effectiveRole === 'PROFESSIONAL') {
+        await prisma.professional.create({ data: { name, userId: user.id } });
+      }
+    }
+  }
+
+  const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET, {
+    expiresIn: process.env.JWT_EXPIRES_IN,
+  });
+  return { user, token, isNew };
+}
+
+module.exports = { register, login, changePassword, forgotPassword, resetPassword, googleAuth };

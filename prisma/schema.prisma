@@ -28,6 +28,7 @@ model User {
   password  String
   name      String
   phone     String?
+  googleId  String?  @unique
   role      Role     @default(CLIENT)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

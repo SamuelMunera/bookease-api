@@ -53,4 +53,15 @@ async function resetPassword(req, res) {
   }
 }
 
-module.exports = { register, login, changePassword, forgotPassword, resetPassword };
+async function googleAuth(req, res) {
+  try {
+    const { accessToken, role } = req.body;
+    if (!accessToken) return res.status(400).json({ error: 'accessToken requerido' });
+    const result = await authService.googleAuth(accessToken, role);
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+}
+
+module.exports = { register, login, changePassword, forgotPassword, resetPassword, googleAuth };
