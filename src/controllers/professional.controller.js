@@ -1,5 +1,6 @@
 const professionalService = require('../services/professional.service');
 const prisma = require('../config/database');
+const { uploadFile } = require('../config/storage');
 
 async function register(req, res) {
   try {
@@ -165,4 +166,29 @@ async function updateBufferTime(req, res) {
   } catch (err) { res.status(400).json({ error: err.message }); }
 }
 
-module.exports = { register, getMe, getMyBookings, getMyServices, setMyServices, getMySchedule, setMySchedule, getWeekSchedule, setWeekSchedule, deleteWeekSchedule, getProfessionalServices, create, findByBusiness, findById, update, remove, getServiceConfigs, saveServiceConfigs, updateBufferTime };
+async function updateProfile(req, res) {
+  try {
+    const prof = await professionalService.updateProfile(req.user.id, req.body);
+    res.json(prof);
+  } catch (err) { res.status(400).json({ error: err.message }); }
+}
+
+async function uploadAvatar(req, res) {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No se recibió ningún archivo' });
+    const ext = req.file.mimetype.split('/')[1] || 'jpg';
+    const path = `professionals/${req.user.id}/avatar.${ext}`;
+    const url = await uploadFile(req.file.buffer, req.file.mimetype, path);
+    const prof = await professionalService.updateProfile(req.user.id, { avatarUrl: url });
+    res.json({ url, professional: prof });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+}
+
+async function unlinkBusiness(req, res) {
+  try {
+    const prof = await professionalService.unlinkBusiness(req.user.id);
+    res.json(prof);
+  } catch (err) { res.status(400).json({ error: err.message }); }
+}
+
+module.exports = { register, getMe, getMyBookings, getMyServices, setMyServices, getMySchedule, setMySchedule, getWeekSchedule, setWeekSchedule, deleteWeekSchedule, getProfessionalServices, create, findByBusiness, findById, update, remove, getServiceConfigs, saveServiceConfigs, updateBufferTime, updateProfile, uploadAvatar, unlinkBusiness };

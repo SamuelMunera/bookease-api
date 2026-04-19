@@ -31,9 +31,21 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  businesses   Business[]
-  bookings     Booking[]
-  professional Professional?
+  businesses          Business[]
+  bookings            Booking[]
+  professional        Professional?
+  passwordResetTokens PasswordResetToken[]
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Business {
@@ -48,6 +60,7 @@ model Business {
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
 
+  logoUrl            String?
   joinCode           String?  @unique
   showRevenueToProf  Boolean  @default(false)
   owner         User           @relation(fields: [ownerId], references: [id])
@@ -63,6 +76,7 @@ model Professional {
   phone      String?
   specialty  String?
   experience String?
+  avatarUrl  String?
   businessId String?
   userId     String?  @unique
   bufferTime Int      @default(0)

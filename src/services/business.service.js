@@ -23,6 +23,21 @@ async function findById(id) {
   });
 }
 
+async function getMyBusiness(ownerId) {
+  return prisma.business.findFirst({
+    where: { ownerId },
+    include: { professionals: true, services: true },
+  });
+}
+
+async function updateProfile(ownerId, data) {
+  const business = await prisma.business.findFirst({ where: { ownerId } });
+  if (!business) throw new Error('Negocio no encontrado');
+  const allowed = ['name', 'description', 'address', 'city', 'phone', 'category', 'logoUrl'];
+  const clean = Object.fromEntries(Object.entries(data).filter(([k]) => allowed.includes(k)));
+  return prisma.business.update({ where: { id: business.id }, data: clean });
+}
+
 async function update(id, ownerId, data) {
   return prisma.business.update({
     where: { id, ownerId },
@@ -34,4 +49,4 @@ async function remove(id, ownerId) {
   return prisma.business.delete({ where: { id, ownerId } });
 }
 
-module.exports = { create, findAll, findById, update, remove };
+module.exports = { create, findAll, findById, getMyBusiness, updateProfile, update, remove };

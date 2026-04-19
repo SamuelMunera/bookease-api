@@ -18,4 +18,39 @@ async function login(req, res) {
   }
 }
 
-module.exports = { register, login };
+async function changePassword(req, res) {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'currentPassword y newPassword son requeridos' });
+    }
+    await authService.changePassword(req.user.id, { currentPassword, newPassword });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+}
+
+async function forgotPassword(req, res) {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: 'email es requerido' });
+    await authService.forgotPassword(email);
+    res.json({ ok: true, message: 'Si el correo existe, recibirás un enlace de recuperación.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
+async function resetPassword(req, res) {
+  try {
+    const { token, newPassword } = req.body;
+    if (!token || !newPassword) return res.status(400).json({ error: 'token y newPassword son requeridos' });
+    await authService.resetPassword(token, newPassword);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+}
+
+module.exports = { register, login, changePassword, forgotPassword, resetPassword };

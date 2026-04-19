@@ -191,4 +191,22 @@ async function updateBufferTime(userId, bufferTime) {
   });
 }
 
-module.exports = { registerProfessional, getMyProfile, getMyBookings, getMyServices, setMyServices, getMySchedule, setMySchedule, getWeekSchedule, setWeekSchedule, deleteWeekSchedule, create, findByBusiness, findById, update, remove, getServiceConfigs, saveServiceConfigs, updateBufferTime };
+async function updateProfile(userId, data) {
+  const prof = await prisma.professional.findUnique({ where: { userId } });
+  if (!prof) throw new Error('Professional profile not found');
+  const allowed = ['name', 'bio', 'phone', 'specialty', 'experience', 'avatarUrl'];
+  const clean = Object.fromEntries(Object.entries(data).filter(([k]) => allowed.includes(k)));
+  return prisma.professional.update({ where: { id: prof.id }, data: clean });
+}
+
+async function unlinkBusiness(userId) {
+  const prof = await prisma.professional.findUnique({ where: { userId } });
+  if (!prof) throw new Error('Professional profile not found');
+  if (!prof.businessId) throw new Error('No estás vinculado a ningún negocio');
+  return prisma.professional.update({
+    where: { id: prof.id },
+    data: { businessId: null },
+  });
+}
+
+module.exports = { registerProfessional, getMyProfile, getMyBookings, getMyServices, setMyServices, getMySchedule, setMySchedule, getWeekSchedule, setWeekSchedule, deleteWeekSchedule, create, findByBusiness, findById, update, remove, getServiceConfigs, saveServiceConfigs, updateBufferTime, updateProfile, unlinkBusiness };
