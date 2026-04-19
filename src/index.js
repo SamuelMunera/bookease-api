@@ -1,6 +1,8 @@
 if (require.main === module) require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 
 const authRoutes = require('./routes/auth.routes');
 const businessRoutes = require('./routes/business.routes');
@@ -15,27 +17,75 @@ const categoryRoutes  = require('./routes/category.routes');
 
 const app = express();
 
+// Trust proxy only when deployed (Vercel sets x-forwarded-for)
+if (process.env.NODE_ENV === 'production') app.set('trust proxy', 1);
+
+// Security headers
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  contentSecurityPolicy: false, // handled by client (Vite/Vercel)
+}));
+
 const allowedOrigins = process.env.ALLOWED_ORIGIN
   ? process.env.ALLOWED_ORIGIN.split(',')
   : ['http://localhost:5173', 'http://localhost:3000'];
 
-app.use(cors({ origin: allowedOrigins }));
-app.use(express.json());
+app.use(cors({
+  origin: allowedOrigins,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}));
 
-app.use('/api/auth', authRoutes);
-app.use('/api/businesses', businessRoutes);
-app.use('/api/pro', proRoutes);
-app.get('/api/professionals/:id', professionalController.findById);
-app.get('/api/professionals/:id/services', professionalController.getProfessionalServices);
-app.use('/api/businesses/:businessId/professionals', professionalRoutes);
-app.use('/api/businesses/:businessId/services', serviceRoutes);
-app.use('/api/businesses/:businessId/professionals/:professionalId/schedules', scheduleRoutes);
-app.use('/api/slots', slotRoutes);
-app.use('/api/bookings', bookingRoutes);
-app.use('/api/categories', categoryRoutes);
-app.use('/api/admin', require('./routes/admin.routes'));
+app.use(express.json({ limit: '50kb' }));
+
+// Rate limiters
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiados intentos. Intenta de nuevo en 15 minutos.' },
+});
+
+const uploadLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 30,
+  message: { error: 'Límite de subidas alcanzado. Intenta más tarde.' },
+});
+
+const generalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use('/api/auth', authLimiter, authRoutes);
+app.use('/api/businesses', generalLimiter, businessRoutes);
+app.use('/api/pro/register', authLimiter);
+app.use('/api/pro', generalLimiter, proRoutes);
+app.get('/api/professionals/:id', generalLimiter, professionalController.findById);
+app.get('/api/professionals/:id/services', generalLimiter, professionalController.getProfessionalServices);
+app.use('/api/businesses/:businessId/professionals', generalLimiter, professionalRoutes);
+app.use('/api/businesses/:businessId/services', generalLimiter, serviceRoutes);
+app.use('/api/businesses/:businessId/professionals/:professionalId/schedules', generalLimiter, scheduleRoutes);
+app.use('/api/slots', generalLimiter, slotRoutes);
+app.use('/api/bookings', generalLimiter, bookingRoutes);
+app.use('/api/categories', generalLimiter, categoryRoutes);
+app.use('/api/admin', generalLimiter, require('./routes/admin.routes'));
 
 app.get('/health', (_, res) => res.json({ status: 'ok' }));
+
+// Catch-all 404
+app.use((_req, res) => res.status(404).json({ error: 'Not found' }));
+
+// Global error handler — never leak stack traces
+app.use((err, _req, res, _next) => {
+  console.error(err);
+  if (err.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ error: 'Archivo demasiado grande (máx 3 MB)' });
+  if (err.message && err.message.startsWith('Solo se permiten')) return res.status(400).json({ error: err.message });
+  res.status(500).json({ error: 'Internal server error' });
+});
 
 if (require.main === module) {
   const PORT = process.env.PORT || 3000;
