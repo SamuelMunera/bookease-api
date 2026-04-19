@@ -13,8 +13,8 @@ router.get('/stats', async (_req, res) => {
       prisma.user.count(),
     ]);
     res.json({ businesses, professionals, bookings, users });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+  } catch {
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -39,8 +39,8 @@ router.get('/businesses', async (_req, res) => {
       bookingCount: b.professionals.reduce((s, p) => s + p._count.bookings, 0),
       createdAt: b.createdAt,
     })));
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+  } catch {
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -48,25 +48,27 @@ router.get('/categories', async (_req, res) => {
   try {
     const cats = await prisma.category.findMany({ orderBy: { name: 'asc' } });
     res.json(cats);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch { res.status(500).json({ error: 'Internal server error' }); }
 });
 
 router.post('/categories', async (req, res) => {
   try {
     const { name, slug, icon } = req.body;
     if (!name || !slug) return res.status(400).json({ error: 'name y slug son requeridos' });
-    const existing = await prisma.category.findUnique({ where: { slug } });
+    const safeSlug = String(slug).toLowerCase().trim().replace(/[^a-z0-9-]/g, '');
+    if (!safeSlug) return res.status(400).json({ error: 'slug inválido' });
+    const existing = await prisma.category.findUnique({ where: { slug: safeSlug } });
     if (existing) return res.status(400).json({ error: 'Ya existe una categoría con ese slug' });
-    const cat = await prisma.category.create({ data: { name, slug: slug.toLowerCase().trim(), icon } });
+    const cat = await prisma.category.create({ data: { name: String(name).trim().slice(0, 100), slug: safeSlug, icon: icon ? String(icon).slice(0, 10) : null } });
     res.status(201).json(cat);
-  } catch (err) { res.status(400).json({ error: err.message }); }
+  } catch { res.status(400).json({ error: 'Error al crear categoría' }); }
 });
 
 router.delete('/categories/:id', async (req, res) => {
   try {
     await prisma.category.delete({ where: { id: req.params.id } });
     res.status(204).send();
-  } catch (err) { res.status(400).json({ error: err.message }); }
+  } catch { res.status(400).json({ error: 'Error al eliminar categoría' }); }
 });
 
 router.get('/professionals', async (_req, res) => {
@@ -80,8 +82,8 @@ router.get('/professionals', async (_req, res) => {
       orderBy: { createdAt: 'desc' },
     });
     res.json(professionals);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+  } catch {
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

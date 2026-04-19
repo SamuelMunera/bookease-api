@@ -5,8 +5,8 @@ router.get('/', async (_req, res) => {
   try {
     const categories = await prisma.category.findMany({ orderBy: { name: 'asc' } });
     res.json(categories);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+  } catch {
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

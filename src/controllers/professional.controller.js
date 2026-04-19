@@ -1,6 +1,7 @@
 const professionalService = require('../services/professional.service');
 const prisma = require('../config/database');
 const { uploadFile } = require('../config/storage');
+const upload = require('../middleware/upload');
 
 async function register(req, res) {
   try {
@@ -178,7 +179,7 @@ async function updateProfile(req, res) {
 async function uploadAvatar(req, res) {
   try {
     if (!req.file) return res.status(400).json({ error: 'No se recibió ningún archivo' });
-    const ext = req.file.mimetype.split('/')[1] || 'jpg';
+    const ext = upload.safeExt(req.file.mimetype);
     const path = `professionals/${req.user.id}/avatar.${ext}`;
     const url = await uploadFile(req.file.buffer, req.file.mimetype, path);
     const prof = await professionalService.updateProfile(req.user.id, { avatarUrl: url });
@@ -196,10 +197,11 @@ async function getPhotos(req, res) {
 async function uploadPhoto(req, res) {
   try {
     if (!req.file) return res.status(400).json({ error: 'No se recibió ningún archivo' });
-    const ext = req.file.mimetype.split('/')[1] || 'jpg';
+    const ext = upload.safeExt(req.file.mimetype);
     const path = `professionals/${req.user.id}/gallery/${Date.now()}.${ext}`;
     const url = await uploadFile(req.file.buffer, req.file.mimetype, path);
-    const photo = await professionalService.addPhoto(req.user.id, url, req.body.caption);
+    const caption = req.body.caption ? String(req.body.caption).slice(0, 200) : undefined;
+    const photo = await professionalService.addPhoto(req.user.id, url, caption);
     res.status(201).json(photo);
   } catch (err) { res.status(500).json({ error: err.message }); }
 }

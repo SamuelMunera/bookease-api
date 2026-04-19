@@ -1,5 +1,6 @@
 const businessService = require('../services/business.service');
 const { uploadFile } = require('../config/storage');
+const upload = require('../middleware/upload');
 
 async function create(req, res) {
   try {
@@ -51,7 +52,7 @@ async function updateProfile(req, res) {
 async function uploadLogo(req, res) {
   try {
     if (!req.file) return res.status(400).json({ error: 'No se recibió ningún archivo' });
-    const ext = req.file.mimetype.split('/')[1] || 'jpg';
+    const ext = upload.safeExt(req.file.mimetype);
     const path = `businesses/${req.user.id}/logo.${ext}`;
     const url = await uploadFile(req.file.buffer, req.file.mimetype, path);
     const business = await businessService.updateProfile(req.user.id, { logoUrl: url });
