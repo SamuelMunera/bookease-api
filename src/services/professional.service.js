@@ -3,10 +3,13 @@ const jwt = require('jsonwebtoken');
 const prisma = require('../config/database');
 
 async function registerProfessional({ name, email, password, phone, specialty, bio, experience, businessId }) {
+  if (!name || !email || !password) throw new Error('name, email and password are required');
+  if (password.length < 8) throw new Error('La contraseña debe tener al menos 8 caracteres');
+
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) throw new Error('Email already registered');
 
-  const hashed = await bcrypt.hash(password, 10);
+  const hashed = await bcrypt.hash(password, 12);
 
   const user = await prisma.user.create({
     data: {
@@ -22,7 +25,7 @@ async function registerProfessional({ name, email, password, phone, specialty, b
   });
 
   const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRES_IN,
+    expiresIn: process.env.JWT_EXPIRES_IN || '7d',
   });
 
   return { user, token };
@@ -138,7 +141,9 @@ async function deleteWeekSchedule(userId, weekStart) {
 }
 
 async function create(businessId, data) {
-  return prisma.professional.create({ data: { ...data, businessId } });
+  const allowed = ['name', 'bio', 'phone', 'specialty', 'experience'];
+  const clean = Object.fromEntries(Object.entries(data).filter(([k]) => allowed.includes(k)));
+  return prisma.professional.create({ data: { ...clean, businessId } });
 }
 
 async function findByBusiness(businessId) {
@@ -155,11 +160,25 @@ async function findById(id) {
   });
 }
 
-async function update(id, data) {
-  return prisma.professional.update({ where: { id }, data });
+async function update(id, ownerId, data) {
+  const prof = await prisma.professional.findUnique({
+    where: { id },
+    include: { business: { select: { ownerId: true } } },
+  });
+  if (!prof) throw new Error('Professional not found');
+  if (!prof.business || prof.business.ownerId !== ownerId) throw new Error('Forbidden');
+  const allowed = ['name', 'bio', 'phone', 'specialty', 'experience'];
+  const clean = Object.fromEntries(Object.entries(data).filter(([k]) => allowed.includes(k)));
+  return prisma.professional.update({ where: { id }, data: clean });
 }
 
-async function remove(id) {
+async function remove(id, ownerId) {
+  const prof = await prisma.professional.findUnique({
+    where: { id },
+    include: { business: { select: { ownerId: true } } },
+  });
+  if (!prof) throw new Error('Professional not found');
+  if (!prof.business || prof.business.ownerId !== ownerId) throw new Error('Forbidden');
   return prisma.professional.delete({ where: { id } });
 }
 

@@ -12,7 +12,7 @@ async function create(req, res) {
     if (Number(price) < 0) {
       return res.status(400).json({ error: 'price must be >= 0' });
     }
-    const service = await serviceService.create(req.params.businessId, req.body);
+    const service = await serviceService.create(req.params.businessId, { name, duration, price, description: req.body.description });
     res.status(201).json(service);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -30,19 +30,21 @@ async function findByBusiness(req, res) {
 
 async function update(req, res) {
   try {
-    const service = await serviceService.update(req.params.id, req.body);
+    const service = await serviceService.update(req.params.id, req.user.id, req.body);
     res.json(service);
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    const status = err.message === 'Forbidden' ? 403 : 400;
+    res.status(status).json({ error: err.message });
   }
 }
 
 async function remove(req, res) {
   try {
-    await serviceService.remove(req.params.id);
+    await serviceService.remove(req.params.id, req.user.id);
     res.status(204).send();
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    const status = err.message === 'Forbidden' ? 403 : 400;
+    res.status(status).json({ error: err.message });
   }
 }
 

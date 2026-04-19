@@ -1,9 +1,10 @@
 const prisma = require('../config/database');
 
+const BUSINESS_EDITABLE = ['name', 'description', 'address', 'city', 'phone', 'category'];
+
 async function create(ownerId, data) {
-  return prisma.business.create({
-    data: { ...data, ownerId },
-  });
+  const clean = Object.fromEntries(Object.entries(data).filter(([k]) => BUSINESS_EDITABLE.includes(k)));
+  return prisma.business.create({ data: { ...clean, ownerId } });
 }
 
 async function findAll({ category, city } = {}) {
@@ -39,10 +40,8 @@ async function updateProfile(ownerId, data) {
 }
 
 async function update(id, ownerId, data) {
-  return prisma.business.update({
-    where: { id, ownerId },
-    data,
-  });
+  const clean = Object.fromEntries(Object.entries(data).filter(([k]) => BUSINESS_EDITABLE.includes(k)));
+  return prisma.business.update({ where: { id, ownerId }, data: clean });
 }
 
 async function remove(id, ownerId) {

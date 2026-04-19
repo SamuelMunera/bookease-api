@@ -5,17 +5,23 @@ const prisma = require('../config/database');
 const { getResend, FROM } = require('../config/email');
 
 async function register({ name, email, password, role, phone }) {
+  if (!name || !email || !password) throw new Error('name, email and password are required');
+  if (password.length < 8) throw new Error('La contraseña debe tener al menos 8 caracteres');
+
+  const ALLOWED_ROLES = ['CLIENT', 'BUSINESS_OWNER'];
+  const safeRole = ALLOWED_ROLES.includes(role?.toUpperCase()) ? role.toUpperCase() : 'CLIENT';
+
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) throw new Error('Email already registered');
 
-  const hashed = await bcrypt.hash(password, 10);
+  const hashed = await bcrypt.hash(password, 12);
   const user = await prisma.user.create({
-    data: { name, email, password: hashed, role, ...(phone ? { phone } : {}) },
+    data: { name: name.trim(), email: email.toLowerCase().trim(), password: hashed, role: safeRole, ...(phone ? { phone } : {}) },
     select: { id: true, name: true, email: true, role: true },
   });
 
   const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRES_IN,
+    expiresIn: process.env.JWT_EXPIRES_IN || '7d',
   });
 
   return { user, token };
@@ -29,7 +35,7 @@ async function login({ email, password }) {
   if (!valid) throw new Error('Invalid credentials');
 
   const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRES_IN,
+    expiresIn: process.env.JWT_EXPIRES_IN || '7d',
   });
 
   return {
@@ -39,8 +45,8 @@ async function login({ email, password }) {
 }
 
 async function changePassword(userId, { currentPassword, newPassword }) {
-  if (!newPassword || newPassword.length < 6) {
-    throw new Error('La nueva contraseña debe tener al menos 6 caracteres');
+  if (!newPassword || newPassword.length < 8) {
+    throw new Error('La nueva contraseña debe tener al menos 8 caracteres');
   }
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) throw new Error('Usuario no encontrado');
@@ -48,7 +54,7 @@ async function changePassword(userId, { currentPassword, newPassword }) {
   const valid = await bcrypt.compare(currentPassword, user.password);
   if (!valid) throw new Error('Contraseña actual incorrecta');
 
-  const hashed = await bcrypt.hash(newPassword, 10);
+  const hashed = await bcrypt.hash(newPassword, 12);
   await prisma.user.update({ where: { id: userId }, data: { password: hashed } });
 }
 
@@ -93,8 +99,8 @@ async function forgotPassword(email) {
 }
 
 async function resetPassword(token, newPassword) {
-  if (!newPassword || newPassword.length < 6) {
-    throw new Error('La contraseña debe tener al menos 6 caracteres');
+  if (!newPassword || newPassword.length < 8) {
+    throw new Error('La contraseña debe tener al menos 8 caracteres');
   }
 
   const record = await prisma.passwordResetToken.findUnique({ where: { token } });
@@ -102,7 +108,7 @@ async function resetPassword(token, newPassword) {
   if (record.used) throw new Error('Token ya utilizado');
   if (record.expiresAt < new Date()) throw new Error('Token expirado');
 
-  const hashed = await bcrypt.hash(newPassword, 10);
+  const hashed = await bcrypt.hash(newPassword, 12);
   await prisma.$transaction([
     prisma.user.update({ where: { id: record.userId }, data: { password: hashed } }),
     prisma.passwordResetToken.update({ where: { token }, data: { used: true } }),
@@ -158,7 +164,7 @@ async function googleAuth(accessToken, role = 'CLIENT') {
   }
 
   const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRES_IN,
+    expiresIn: process.env.JWT_EXPIRES_IN || '7d',
   });
   return { user, token, isNew };
 }

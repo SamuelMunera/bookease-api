@@ -85,19 +85,21 @@ async function findByBusiness(req, res) {
 
 async function update(req, res) {
   try {
-    const professional = await professionalService.update(req.params.id, req.body);
+    const professional = await professionalService.update(req.params.id, req.user.id, req.body);
     res.json(professional);
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    const status = err.message === 'Forbidden' ? 403 : 400;
+    res.status(status).json({ error: err.message });
   }
 }
 
 async function remove(req, res) {
   try {
-    await professionalService.remove(req.params.id);
+    await professionalService.remove(req.params.id, req.user.id);
     res.status(204).send();
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    const status = err.message === 'Forbidden' ? 403 : 400;
+    res.status(status).json({ error: err.message });
   }
 }
 
