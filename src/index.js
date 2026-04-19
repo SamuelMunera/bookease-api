@@ -14,6 +14,8 @@ const scheduleRoutes = require('./routes/schedule.routes');
 const slotRoutes = require('./routes/slot.routes');
 const bookingRoutes   = require('./routes/booking.routes');
 const categoryRoutes  = require('./routes/category.routes');
+const reviewRoutes    = require('./routes/review.routes');
+const feedbackRoutes  = require('./routes/feedback.routes');
 
 const app = express();
 
@@ -73,6 +75,8 @@ app.use('/api/slots', generalLimiter, slotRoutes);
 app.use('/api/bookings', generalLimiter, bookingRoutes);
 app.use('/api/categories', generalLimiter, categoryRoutes);
 app.use('/api/admin', generalLimiter, require('./routes/admin.routes'));
+app.use('/api', generalLimiter, reviewRoutes);
+app.use('/api/feedback', generalLimiter, feedbackRoutes);
 
 app.get('/health', (_, res) => res.json({ status: 'ok' }));
 
