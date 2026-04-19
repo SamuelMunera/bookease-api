@@ -1,15 +1,20 @@
 const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
 const BUCKET = 'profiles';
 
+function getKey() {
+  // Service role key bypasses RLS — required for backend uploads
+  return process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY;
+}
+
 async function uploadFile(buffer, mimeType, storagePath) {
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-    throw new Error('Storage not configured');
+  const key = getKey();
+  if (!SUPABASE_URL || !key) {
+    throw new Error('Storage not configured: set SUPABASE_SERVICE_KEY in env vars');
   }
   const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET}/${storagePath}`, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      Authorization: `Bearer ${key}`,
       'Content-Type': mimeType,
       'x-upsert': 'true',
     },
