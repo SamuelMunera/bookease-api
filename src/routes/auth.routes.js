@@ -8,5 +8,6 @@ router.patch('/change-password', authenticate, authController.changePassword);
 router.post('/forgot-password', authController.forgotPassword);
 router.post('/reset-password', authController.resetPassword);
 router.post('/google', authController.googleAuth);
+router.patch('/me', authenticate, authController.updateMe);
 
 module.exports = router;

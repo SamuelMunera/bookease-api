@@ -64,4 +64,19 @@ async function googleAuth(req, res) {
   }
 }
 
-module.exports = { register, login, changePassword, forgotPassword, resetPassword, googleAuth };
+async function updateMe(req, res) {
+  try {
+    const { phone } = req.body;
+    const prisma = require('../config/database');
+    const user = await prisma.user.update({
+      where: { id: req.user.id },
+      data: { ...(phone !== undefined ? { phone: phone || null } : {}) },
+      select: { id: true, name: true, email: true, role: true, phone: true },
+    });
+    res.json({ user });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+}
+
+module.exports = { register, login, changePassword, forgotPassword, resetPassword, googleAuth, updateMe };
