@@ -66,6 +66,8 @@ model Business {
   logoUrl            String?
   joinCode           String?  @unique
   showRevenueToProf  Boolean  @default(false)
+  lat                Float?
+  lng                Float?
   owner         User           @relation(fields: [ownerId], references: [id])
   professionals Professional[]
   services      Service[]
