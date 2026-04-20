@@ -2,7 +2,7 @@ const prisma = require('../config/database');
 const { toMinutes, toTime, parseLocalDate, overlaps } = require('./slot.service');
 
 const BOOKING_INCLUDE = {
-  client: { select: { id: true, name: true, email: true } },
+  client: { select: { id: true, name: true, email: true, phone: true } },
   professional: { select: { id: true, name: true } },
   service: { select: { id: true, name: true, duration: true, price: true } },
 };
