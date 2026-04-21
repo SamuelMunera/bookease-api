@@ -81,7 +81,7 @@ app.use('/api/feedback', feedbackLimiter, feedbackRoutes);
 // Public home service endpoints
 const { authenticate, requireRole } = require('./middleware/auth');
 app.get('/api/professionals/:professionalId/home-services', generalLimiter, homeServiceController.publicListHomeServices);
-app.post('/api/bookings/home', generalLimiter, authenticate, requireRole('CLIENT'), homeServiceController.createHomeBooking);
+app.post('/api/bookings/home', generalLimiter, authenticate, homeServiceController.createHomeBooking);
 app.patch('/api/bookings/home/:id/cancel', generalLimiter, authenticate, homeServiceController.cancelHomeBooking);
 
 app.get('/health', (_, res) => res.json({ status: 'ok' }));
