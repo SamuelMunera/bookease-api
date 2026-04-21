@@ -4,7 +4,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 
-const { adminLimiter } = require('./middleware/rateLimiters');
+const { adminLimiter, registerLimiter, feedbackLimiter } = require('./middleware/rateLimiters');
 const authRoutes = require('./routes/auth.routes');
 const businessRoutes = require('./routes/business.routes');
 const professionalRoutes = require('./routes/professional.routes');
@@ -27,29 +27,32 @@ if (process.env.NODE_ENV === 'production') app.set('trust proxy', 1);
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
   contentSecurityPolicy: false, // handled by client (Vite/Vercel)
+  hsts: process.env.NODE_ENV === 'production'
+    ? { maxAge: 31536000, includeSubDomains: true, preload: true }
+    : false,
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+  frameguard: { action: 'deny' },
+  noSniff: true,
+  xssFilter: true,
 }));
 
 const allowedOrigins = process.env.ALLOWED_ORIGIN
-  ? process.env.ALLOWED_ORIGIN.split(',')
+  ? process.env.ALLOWED_ORIGIN.split(',').map(o => o.trim())
   : ['http://localhost:5173', 'http://localhost:3000'];
 
 app.use(cors({
-  origin: allowedOrigins,
+  origin: (origin, cb) => {
+    if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+    cb(new Error('Not allowed by CORS'));
+  },
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
+  maxAge: 3600,
 }));
 
 app.use(express.json({ limit: '50kb' }));
 
 // Rate limiters
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 20,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Demasiados intentos. Intenta de nuevo en 15 minutos.' },
-});
-
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 300,
@@ -57,9 +60,9 @@ const generalLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-app.use('/api/auth', authLimiter, authRoutes);
+app.use('/api/auth', authRoutes);
 app.use('/api/businesses', generalLimiter, businessRoutes);
-app.use('/api/pro/register', authLimiter);
+app.use('/api/pro/register', registerLimiter);
 app.use('/api/pro', generalLimiter, proRoutes);
 app.get('/api/professionals/:id', generalLimiter, professionalController.findById);
 app.get('/api/professionals/:id/services', generalLimiter, professionalController.getProfessionalServices);
@@ -71,7 +74,7 @@ app.use('/api/bookings', generalLimiter, bookingRoutes);
 app.use('/api/categories', generalLimiter, categoryRoutes);
 app.use('/api/admin', adminLimiter, require('./routes/admin.routes'));
 app.use('/api', generalLimiter, reviewRoutes);
-app.use('/api/feedback', generalLimiter, feedbackRoutes);
+app.use('/api/feedback', feedbackLimiter, feedbackRoutes);
 
 app.get('/health', (_, res) => res.json({ status: 'ok' }));
 

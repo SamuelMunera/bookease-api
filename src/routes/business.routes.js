@@ -5,11 +5,12 @@ const joinRequestController  = require('../controllers/joinRequest.controller');
 const revenueController      = require('../controllers/revenue.controller');
 const { authenticate, requireRole } = require('../middleware/auth');
 const upload = require('../middleware/upload');
+const { uploadLimiter } = require('../middleware/rateLimiters');
 
 // Owner endpoints (must be before /:id)
 router.get('/me',                             authenticate, requireRole('BUSINESS_OWNER'), businessController.getMe);
 router.patch('/me/profile',                   authenticate, requireRole('BUSINESS_OWNER'), businessController.updateProfile);
-router.post('/me/logo',                       authenticate, requireRole('BUSINESS_OWNER'), upload.single('file'), businessController.uploadLogo);
+router.post('/me/logo',                       authenticate, requireRole('BUSINESS_OWNER'), uploadLimiter, upload.single('file'), businessController.uploadLogo);
 router.get('/me/join-code',                   authenticate, requireRole('BUSINESS_OWNER'), joinRequestController.getJoinCode);
 router.get('/me/join-requests',               authenticate, requireRole('BUSINESS_OWNER'), joinRequestController.getBusinessJoinRequests);
 router.patch('/me/join-requests/:id/approve', authenticate, requireRole('BUSINESS_OWNER'), joinRequestController.approveRequest);

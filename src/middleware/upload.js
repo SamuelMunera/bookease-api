@@ -1,7 +1,7 @@
 const multer = require('multer');
 
-const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
-const SAFE_EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp' };
+const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const SAFE_EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
 
 const upload = multer({
   storage: multer.memoryStorage(),

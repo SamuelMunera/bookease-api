@@ -47,4 +47,10 @@ const adminLimiter = rateLimit({
   message: { error: 'Demasiadas solicitudes al panel admin.' },
 });
 
-module.exports = { loginLimiter, registerLimiter, forgotPasswordLimiter, resetPasswordLimiter, uploadLimiter, adminLimiter };
+const feedbackLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  message: { error: 'Límite de feedback alcanzado. Intenta más tarde.' },
+});
+
+module.exports = { loginLimiter, registerLimiter, forgotPasswordLimiter, resetPasswordLimiter, uploadLimiter, adminLimiter, feedbackLimiter };
