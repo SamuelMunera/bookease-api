@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const professionalService = require('../services/professional.service');
 const prisma = require('../config/database');
 const { uploadFile } = require('../config/storage');
@@ -198,7 +199,7 @@ async function uploadPhoto(req, res) {
   try {
     if (!req.file) return res.status(400).json({ error: 'No se recibió ningún archivo' });
     const ext = upload.safeExt(req.file.mimetype);
-    const path = `professionals/${req.user.id}/gallery/${Date.now()}.${ext}`;
+    const path = `professionals/${req.user.id}/gallery/${crypto.randomUUID()}.${ext}`;
     const url = await uploadFile(req.file.buffer, req.file.mimetype, path);
     const caption = req.body.caption ? String(req.body.caption).slice(0, 200) : undefined;
     const photo = await professionalService.addPhoto(req.user.id, url, caption);

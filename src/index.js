@@ -4,6 +4,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 
+const { adminLimiter } = require('./middleware/rateLimiters');
 const authRoutes = require('./routes/auth.routes');
 const businessRoutes = require('./routes/business.routes');
 const professionalRoutes = require('./routes/professional.routes');
@@ -49,12 +50,6 @@ const authLimiter = rateLimit({
   message: { error: 'Demasiados intentos. Intenta de nuevo en 15 minutos.' },
 });
 
-const uploadLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000,
-  max: 30,
-  message: { error: 'Límite de subidas alcanzado. Intenta más tarde.' },
-});
-
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 300,
@@ -74,7 +69,7 @@ app.use('/api/businesses/:businessId/professionals/:professionalId/schedules', g
 app.use('/api/slots', generalLimiter, slotRoutes);
 app.use('/api/bookings', generalLimiter, bookingRoutes);
 app.use('/api/categories', generalLimiter, categoryRoutes);
-app.use('/api/admin', generalLimiter, require('./routes/admin.routes'));
+app.use('/api/admin', adminLimiter, require('./routes/admin.routes'));
 app.use('/api', generalLimiter, reviewRoutes);
 app.use('/api/feedback', generalLimiter, feedbackRoutes);
 
