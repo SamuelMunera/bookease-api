@@ -150,6 +150,48 @@ async function findByBusiness(businessId) {
   return prisma.professional.findMany({ where: { businessId } });
 }
 
+async function findHomeProfessionals({ city } = {}) {
+  const rows = await prisma.professional.findMany({
+    where: { offersHomeService: true },
+    select: {
+      id: true, name: true, specialty: true, bio: true, avatarUrl: true,
+      homeServiceArea: true, homeServiceSurcharge: true, homeServiceNotes: true,
+      businessId: true,
+      homeServices: { where: { isActive: true }, select: { id: true, name: true, duration: true, price: true }, take: 3 },
+      reviews: { select: { rating: true } },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  return rows
+    .map(p => {
+      const area = p.homeServiceArea ? JSON.parse(p.homeServiceArea) : null;
+      const reviewCount = p.reviews.length;
+      const avgRating = reviewCount > 0
+        ? Math.round((p.reviews.reduce((s, r) => s + r.rating, 0) / reviewCount) * 10) / 10
+        : null;
+      return {
+        id: p.id,
+        name: p.name,
+        specialty: p.specialty,
+        bio: p.bio,
+        avatarUrl: p.avatarUrl,
+        cities: area?.cities ?? [],
+        homeServiceSurcharge: p.homeServiceSurcharge,
+        homeServiceNotes: p.homeServiceNotes,
+        hasBusinessToo: !!p.businessId,
+        homeServices: p.homeServices,
+        avgRating,
+        reviewCount,
+      };
+    })
+    .filter(p => {
+      if (!city) return true;
+      if (p.cities.length === 0) return true; // no restriction = covers all
+      return p.cities.some(c => c.toLowerCase().includes(city.toLowerCase()));
+    });
+}
+
 async function findById(id) {
   return prisma.professional.findUnique({
     where: { id },
@@ -259,4 +301,4 @@ async function unlinkBusiness(userId) {
   });
 }
 
-module.exports = { registerProfessional, getMyProfile, getMyBookings, getMyServices, setMyServices, getMySchedule, setMySchedule, getWeekSchedule, setWeekSchedule, deleteWeekSchedule, create, findByBusiness, findById, update, remove, getServiceConfigs, saveServiceConfigs, updateBufferTime, updateProfile, unlinkBusiness, getPhotos, addPhoto, deletePhoto };
+module.exports = { findHomeProfessionals, registerProfessional, getMyProfile, getMyBookings, getMyServices, setMyServices, getMySchedule, setMySchedule, getWeekSchedule, setWeekSchedule, deleteWeekSchedule, create, findByBusiness, findById, update, remove, getServiceConfigs, saveServiceConfigs, updateBufferTime, updateProfile, unlinkBusiness, getPhotos, addPhoto, deletePhoto };

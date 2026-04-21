@@ -65,6 +65,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/businesses', generalLimiter, businessRoutes);
 app.use('/api/pro/register', registerLimiter);
 app.use('/api/pro', generalLimiter, proRoutes);
+app.get('/api/professionals', generalLimiter, professionalController.findHomeProfessionals);
 app.get('/api/professionals/:id', generalLimiter, professionalController.findById);
 app.get('/api/professionals/:id/services', generalLimiter, professionalController.getProfessionalServices);
 app.use('/api/businesses/:businessId/professionals', generalLimiter, professionalRoutes);

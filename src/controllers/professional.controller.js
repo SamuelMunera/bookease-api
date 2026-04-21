@@ -214,6 +214,14 @@ async function deletePhoto(req, res) {
   } catch (err) { res.status(400).json({ error: err.message }); }
 }
 
+async function findHomeProfessionals(req, res) {
+  try {
+    const { city } = req.query;
+    const data = await professionalService.findHomeProfessionals({ city });
+    res.json(data);
+  } catch (err) { res.status(500).json({ error: 'Internal server error' }); }
+}
+
 async function unlinkBusiness(req, res) {
   try {
     const prof = await professionalService.unlinkBusiness(req.user.id);
@@ -221,4 +229,4 @@ async function unlinkBusiness(req, res) {
   } catch (err) { res.status(400).json({ error: err.message }); }
 }
 
-module.exports = { register, getMe, getMyBookings, getMyServices, setMyServices, getMySchedule, setMySchedule, getWeekSchedule, setWeekSchedule, deleteWeekSchedule, getProfessionalServices, create, findByBusiness, findById, update, remove, getServiceConfigs, saveServiceConfigs, updateBufferTime, updateProfile, uploadAvatar, unlinkBusiness, getPhotos, uploadPhoto, deletePhoto };
+module.exports = { register, getMe, getMyBookings, getMyServices, setMyServices, getMySchedule, setMySchedule, getWeekSchedule, setWeekSchedule, deleteWeekSchedule, getProfessionalServices, create, findByBusiness, findById, findHomeProfessionals, update, remove, getServiceConfigs, saveServiceConfigs, updateBufferTime, updateProfile, uploadAvatar, unlinkBusiness, getPhotos, uploadPhoto, deletePhoto };
