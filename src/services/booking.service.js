@@ -5,6 +5,7 @@ const BOOKING_INCLUDE = {
   client: { select: { id: true, name: true, email: true, phone: true } },
   professional: { select: { id: true, name: true } },
   service: { select: { id: true, name: true, duration: true, price: true } },
+  homeService: { select: { id: true, name: true, duration: true, price: true, surcharge: true } },
 };
 
 // Returns { effectiveDuration, bufferTime } for a professional+service pair
@@ -193,13 +194,17 @@ async function rescheduleBooking(id, clientId, { date, startTime }) {
     async (tx) => {
       const existing = await tx.booking.findUnique({
         where: { id },
-        include: { service: { select: { duration: true } } },
+        include: {
+          service: { select: { duration: true } },
+          homeService: { select: { duration: true } },
+        },
       });
       if (!existing) throw new Error('Booking not found');
       if (existing.clientId !== clientId) throw new Error('Forbidden');
       if (existing.status === 'CANCELLED') throw new Error('Cannot reschedule a cancelled booking');
 
-      const { professionalId, service } = existing;
+      const { professionalId, service, homeService } = existing;
+      if (existing.type === 'HOME_SERVICE') throw new Error('Home service bookings cannot be rescheduled here');
       const { bufferTime, customDuration } = await getEffectiveTiming(tx, professionalId, existing.serviceId);
       const effectiveDuration = customDuration ?? service.duration;
 

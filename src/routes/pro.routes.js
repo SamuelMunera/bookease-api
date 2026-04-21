@@ -38,4 +38,15 @@ router.get('/me/join-request',   authenticate, requireRole('PROFESSIONAL'), join
 const revenueController = require('../controllers/revenue.controller');
 router.get('/me/revenue', authenticate, requireRole('PROFESSIONAL'), revenueController.getProfessionalRevenue);
 
+// Home service
+const homeServiceController = require('../controllers/homeService.controller');
+router.get('/me/home-config',              authenticate, requireRole('PROFESSIONAL'), homeServiceController.getHomeConfig);
+router.patch('/me/home-config',            authenticate, requireRole('PROFESSIONAL'), homeServiceController.updateHomeConfig);
+router.get('/me/home-services',            authenticate, requireRole('PROFESSIONAL'), homeServiceController.listHomeServices);
+router.post('/me/home-services',           authenticate, requireRole('PROFESSIONAL'), homeServiceController.createHomeService);
+router.patch('/me/home-services/:id',      authenticate, requireRole('PROFESSIONAL'), homeServiceController.updateHomeService);
+router.delete('/me/home-services/:id',     authenticate, requireRole('PROFESSIONAL'), homeServiceController.deleteHomeService);
+router.get('/me/home-schedule',            authenticate, requireRole('PROFESSIONAL'), homeServiceController.getHomeSchedule);
+router.put('/me/home-schedule',            authenticate, requireRole('PROFESSIONAL'), homeServiceController.setHomeSchedule);
+
 module.exports = router;

@@ -103,4 +103,58 @@ async function getAvailableSlots(professionalId, serviceId, dateStr) {
   return slots;
 }
 
-module.exports = { getAvailableSlots, toMinutes, toTime, parseLocalDate, overlaps };
+async function getHomeSlots(professionalId, homeServiceId, dateStr) {
+  const localDate = parseLocalDate(dateStr);
+  const [_y, _m, _d] = dateStr.split('-').map(Number);
+  const dayOfWeek = new Date(_y, _m - 1, _d).getDay();
+
+  const homeService = await prisma.homeService.findUnique({ where: { id: homeServiceId } });
+  if (!homeService) throw new Error('Home service not found');
+  if (!homeService.isActive) return [];
+
+  const proRow = await prisma.professional.findUnique({
+    where: { id: professionalId },
+    select: { bufferTime: true, offersHomeService: true },
+  });
+  if (!proRow?.offersHomeService) return [];
+
+  const schedule = await prisma.homeSchedule.findUnique({
+    where: { professionalId_dayOfWeek: { professionalId, dayOfWeek } },
+  });
+  if (!schedule || !schedule.isActive) return [];
+
+  const dayStart = toMinutes(schedule.startTime);
+  const dayEnd   = toMinutes(schedule.endTime);
+  const effectiveDuration = homeService.duration;
+  const bufferTime = proRow?.bufferTime ?? 0;
+
+  const exceptions = await prisma.scheduleException.findMany({
+    where: { professionalId, date: localDate },
+  });
+  if (exceptions.some((e) => !e.startTime && !e.endTime)) return [];
+
+  const exceptionBlocks = exceptions
+    .filter((e) => e.startTime && e.endTime)
+    .map((e) => ({ start: toMinutes(e.startTime), end: toMinutes(e.endTime) }));
+
+  const bookings = await prisma.booking.findMany({
+    where: { professionalId, date: localDate, status: { not: 'CANCELLED' } },
+  });
+  const bookingBlocks = bookings.map((b) => ({
+    start: toMinutes(b.startTime),
+    end:   toMinutes(b.endTime) + bufferTime,
+  }));
+
+  const blocked = [...exceptionBlocks, ...bookingBlocks];
+  const step = effectiveDuration + bufferTime;
+  const slots = [];
+  for (let start = dayStart; start + effectiveDuration <= dayEnd; start += step) {
+    const end = start + effectiveDuration;
+    if (!blocked.some((b) => overlaps(start, end, b.start, b.end))) {
+      slots.push({ startTime: toTime(start), endTime: toTime(end) });
+    }
+  }
+  return slots;
+}
+
+module.exports = { getAvailableSlots, getHomeSlots, toMinutes, toTime, parseLocalDate, overlaps };

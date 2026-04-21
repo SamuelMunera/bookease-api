@@ -17,6 +17,7 @@ const bookingRoutes   = require('./routes/booking.routes');
 const categoryRoutes  = require('./routes/category.routes');
 const reviewRoutes    = require('./routes/review.routes');
 const feedbackRoutes  = require('./routes/feedback.routes');
+const homeServiceController = require('./controllers/homeService.controller');
 
 const app = express();
 
@@ -75,6 +76,12 @@ app.use('/api/categories', generalLimiter, categoryRoutes);
 app.use('/api/admin', adminLimiter, require('./routes/admin.routes'));
 app.use('/api', generalLimiter, reviewRoutes);
 app.use('/api/feedback', feedbackLimiter, feedbackRoutes);
+
+// Public home service endpoints
+const { authenticate, requireRole } = require('./middleware/auth');
+app.get('/api/professionals/:professionalId/home-services', generalLimiter, homeServiceController.publicListHomeServices);
+app.post('/api/bookings/home', generalLimiter, authenticate, requireRole('CLIENT'), homeServiceController.createHomeBooking);
+app.patch('/api/bookings/home/:id/cancel', generalLimiter, authenticate, homeServiceController.cancelHomeBooking);
 
 app.get('/health', (_, res) => res.json({ status: 'ok' }));
 

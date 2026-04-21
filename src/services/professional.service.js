@@ -157,6 +157,7 @@ async function findById(id) {
       business: { select: { id: true, name: true } },
       photos: { orderBy: { createdAt: 'desc' } },
     },
+    // offersHomeService, homeServiceArea included from model columns
   });
 }
 

@@ -89,13 +89,20 @@ model Professional {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
+  offersHomeService    Boolean  @default(false)
+  homeServiceArea      String?
+  homeServiceSurcharge Decimal? @db.Decimal(10, 2)
+  homeServiceNotes     String?
+
   business           Business?                  @relation(fields: [businessId], references: [id])
   user               User?                      @relation(fields: [userId], references: [id])
   schedules          Schedule[]
+  homeSchedules      HomeSchedule[]
   scheduleExceptions ScheduleException[]
   scheduleOverrides  ScheduleOverride[]
   bookings           Booking[]
   services           Service[]
+  homeServices       HomeService[]
   joinRequests       JoinRequest[]
   serviceConfigs     ProfessionalServiceConfig[]
   photos             ProfessionalPhoto[]
@@ -195,22 +202,62 @@ enum BookingStatus {
   CANCELLED
 }
 
+enum BookingType {
+  BUSINESS
+  HOME_SERVICE
+}
+
 // Minimal booking — used by slot engine to exclude occupied time
 model Booking {
   id             String        @id @default(cuid())
   professionalId String
-  serviceId      String
+  serviceId      String?
+  homeServiceId  String?
   clientId       String
   date           DateTime      @db.Date
   startTime      String
   endTime        String
   status         BookingStatus @default(PENDING)
+  type           BookingType   @default(BUSINESS)
+  clientAddress  String?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
-  professional Professional @relation(fields: [professionalId], references: [id])
-  service      Service      @relation(fields: [serviceId], references: [id])
-  client       User         @relation(fields: [clientId], references: [id])
+  professional Professional  @relation(fields: [professionalId], references: [id])
+  service      Service?       @relation(fields: [serviceId], references: [id])
+  homeService  HomeService?   @relation(fields: [homeServiceId], references: [id])
+  client       User           @relation(fields: [clientId], references: [id])
+}
+
+model HomeService {
+  id             String   @id @default(cuid())
+  professionalId String
+  name           String
+  description    String?
+  duration       Int
+  price          Decimal  @db.Decimal(10, 2)
+  surcharge      Decimal? @db.Decimal(10, 2)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  professional Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+  bookings     Booking[]
+}
+
+model HomeSchedule {
+  id             String   @id @default(cuid())
+  professionalId String
+  dayOfWeek      Int
+  startTime      String
+  endTime        String
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  professional Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+
+  @@unique([professionalId, dayOfWeek])
 }
 
 model Category {
