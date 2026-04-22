@@ -2,7 +2,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const prisma = require('../config/database');
 
-async function registerProfessional({ name, email, password, phone, specialty, bio, experience, businessId }) {
+async function registerProfessional({ name, email, password, phone, specialty, bio, experience, businessId, offersHomeService, homeServiceArea }) {
   if (!name || !email || !password) throw new Error('name, email and password are required');
   if (password.length < 8) throw new Error('La contraseña debe tener al menos 8 caracteres');
 
@@ -11,12 +11,17 @@ async function registerProfessional({ name, email, password, phone, specialty, b
 
   const hashed = await bcrypt.hash(password, 12);
 
+  const proData = {
+    name, phone, specialty, bio, experience,
+    ...(businessId ? { businessId } : {}),
+    ...(offersHomeService ? { offersHomeService: true } : {}),
+    ...(homeServiceArea ? { homeServiceArea: JSON.stringify(homeServiceArea) } : {}),
+  };
+
   const user = await prisma.user.create({
     data: {
       name, email, password: hashed, role: 'PROFESSIONAL',
-      professional: {
-        create: { name, phone, specialty, bio, experience, ...(businessId ? { businessId } : {}) },
-      },
+      professional: { create: proData },
     },
     select: {
       id: true, name: true, email: true, role: true,
