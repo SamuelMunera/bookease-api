@@ -113,12 +113,14 @@ async function checkCoverage(professionalId, clientCity) {
   });
   if (!pro || !pro.offersHomeService) throw new Error('Professional does not offer home services');
 
-  if (!pro.homeServiceArea) return true; // No restriction = covers everywhere
+  if (!pro.homeServiceArea) return true;
 
   const area = JSON.parse(pro.homeServiceArea);
   if (!area.cities || area.cities.length === 0) return true;
+  if (!clientCity || !clientCity.trim()) return true; // no city sent = don't restrict
 
-  const normalise = (s) => s.trim().toLowerCase();
+  const normalise = (s) =>
+    s.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
   const covered = area.cities.some((c) => normalise(c) === normalise(clientCity));
   return covered;
 }
