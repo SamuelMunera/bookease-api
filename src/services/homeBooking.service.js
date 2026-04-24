@@ -1,10 +1,11 @@
 const prisma = require('../config/database');
 const { toMinutes, toTime, parseLocalDate, overlaps } = require('./slot.service');
 const { checkCoverage } = require('./homeService.service');
+const emailService = require('./email.service');
 
 const HOME_BOOKING_INCLUDE = {
   client: { select: { id: true, name: true, email: true, phone: true } },
-  professional: { select: { id: true, name: true, avatarUrl: true } },
+  professional: { select: { id: true, name: true, user: { select: { email: true } } } },
   homeService: { select: { id: true, name: true, duration: true, price: true, surcharge: true } },
 };
 
@@ -92,6 +93,7 @@ async function createHomeBooking({ clientId, professionalId, homeServiceId, date
     { isolationLevel: 'Serializable' }
   );
 
+  emailService.sendBookingConfirmation(booking).catch(e => console.error('[email] home confirmation:', e.message));
   return booking;
 }
 
@@ -102,11 +104,13 @@ async function cancelHomeBooking(id, clientId) {
   if (booking.type !== 'HOME_SERVICE') throw new Error('Not a home service booking');
   if (booking.status === 'CANCELLED') throw new Error('Already cancelled');
 
-  return prisma.booking.update({
+  const cancelled = await prisma.booking.update({
     where: { id },
     data: { status: 'CANCELLED' },
     include: HOME_BOOKING_INCLUDE,
   });
+  emailService.sendBookingCancellation(cancelled).catch(e => console.error('[email] home cancellation:', e.message));
+  return cancelled;
 }
 
 module.exports = { createHomeBooking, cancelHomeBooking };

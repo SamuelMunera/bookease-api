@@ -1,12 +1,12 @@
 const prisma = require('../config/database');
 const { toMinutes, toTime, parseLocalDate, overlaps } = require('./slot.service');
+const emailService = require('./email.service');
 
 const BOOKING_INCLUDE = {
   client: { select: { id: true, name: true, email: true, phone: true } },
-  professional: { select: { id: true, name: true } },
+  professional: { select: { id: true, name: true, user: { select: { email: true } } } },
   service: { select: { id: true, name: true, duration: true, price: true } },
   homeService: { select: { id: true, name: true, duration: true, price: true, surcharge: true } },
-  // scalar fields source, guestName are included automatically
 };
 
 // Returns { effectiveDuration, bufferTime } for a professional+service pair
@@ -103,6 +103,7 @@ async function createBooking({ clientId, professionalId, serviceId, date, startT
   );
 
 
+  emailService.sendBookingConfirmation(booking).catch(e => console.error('[email] confirmation:', e.message));
   return booking;
 }
 
@@ -125,8 +126,7 @@ async function cancelBooking(id, clientId) {
     data: { status: 'CANCELLED' },
     include: BOOKING_INCLUDE,
   });
-
-
+  emailService.sendBookingCancellation(cancelled).catch(e => console.error('[email] cancellation:', e.message));
   return cancelled;
 }
 
@@ -162,8 +162,7 @@ async function cancelBookingAsOwner(id, ownerId) {
     data: { status: 'CANCELLED' },
     include: BOOKING_INCLUDE,
   });
-
-
+  emailService.sendBookingCancellation(cancelled).catch(e => console.error('[email] cancellation:', e.message));
   return cancelled;
 }
 
