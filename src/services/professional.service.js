@@ -2,7 +2,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const prisma = require('../config/database');
 
-async function registerProfessional({ name, email, password, phone, specialty, bio, experience, businessId, offersHomeService, homeServiceArea }) {
+async function registerProfessional({ name, email, password, phone, specialty, bio, experience, businessId, offersHomeService, homeServiceArea, country, timezone, state, zipCode }) {
   if (!name || !email || !password) throw new Error('name, email and password are required');
   if (password.length < 8) throw new Error('La contraseña debe tener al menos 8 caracteres');
 
@@ -16,6 +16,10 @@ async function registerProfessional({ name, email, password, phone, specialty, b
     ...(businessId ? { businessId } : {}),
     ...(offersHomeService ? { offersHomeService: true } : {}),
     ...(homeServiceArea ? { homeServiceArea: JSON.stringify(homeServiceArea) } : {}),
+    ...(country   ? { country } : {}),
+    ...(timezone  ? { timezone } : {}),
+    ...(state     ? { state } : {}),
+    ...(zipCode   ? { zipCode } : {}),
   };
 
   const user = await prisma.user.create({
@@ -273,7 +277,7 @@ async function updateBufferTime(userId, bufferTime) {
 async function updateProfile(userId, data) {
   const prof = await prisma.professional.findUnique({ where: { userId } });
   if (!prof) throw new Error('Professional profile not found');
-  const allowed = ['name', 'bio', 'phone', 'specialty', 'experience', 'avatarUrl'];
+  const allowed = ['name', 'bio', 'phone', 'specialty', 'experience', 'avatarUrl', 'country', 'timezone', 'state', 'zipCode'];
   const clean = Object.fromEntries(Object.entries(data).filter(([k]) => allowed.includes(k)));
   return prisma.professional.update({ where: { id: prof.id }, data: clean });
 }

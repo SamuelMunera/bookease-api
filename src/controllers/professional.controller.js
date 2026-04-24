@@ -6,10 +6,10 @@ const upload = require('../middleware/upload');
 
 async function register(req, res) {
   try {
-    const { name, email, password, phone, specialty, bio, experience, businessId, offersHomeService, homeServiceArea } = req.body;
+    const { name, email, password, phone, specialty, bio, experience, businessId, offersHomeService, homeServiceArea, country, timezone, state, zipCode } = req.body;
     if (!name || !email || !password)
       return res.status(400).json({ error: 'name, email and password are required' });
-    const result = await professionalService.registerProfessional({ name, email, password, phone, specialty, bio, experience, businessId, offersHomeService, homeServiceArea });
+    const result = await professionalService.registerProfessional({ name, email, password, phone, specialty, bio, experience, businessId, offersHomeService, homeServiceArea, country, timezone, state, zipCode });
     res.status(201).json(result);
   } catch (err) {
     res.status(400).json({ error: err.message });

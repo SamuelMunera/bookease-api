@@ -1,6 +1,7 @@
 const prisma = require('../config/database');
 const { toMinutes, toTime, parseLocalDate, overlaps } = require('./slot.service');
 const emailService = require('./email.service');
+const { bookingToUTCMs } = require('../utils/timezone');
 
 const BOOKING_INCLUDE = {
   client: { select: { id: true, name: true, email: true, phone: true } },
@@ -115,22 +116,22 @@ async function getUserBookings(clientId) {
   });
 }
 
-// Returns the effective cancelMinHours for a booking (business policy > pro policy)
+// Returns { minHours, timezone } for a booking
 async function getCancelPolicy(professionalId) {
   const pro = await prisma.professional.findUnique({
     where:  { id: professionalId },
-    select: { cancelMinHours: true, business: { select: { cancelMinHours: true } } },
+    select: { cancelMinHours: true, timezone: true, business: { select: { cancelMinHours: true, timezone: true } } },
   });
-  if (!pro) return 0;
+  if (!pro) return { minHours: 0, timezone: 'America/Bogota' };
   const bizHours = pro.business?.cancelMinHours ?? 0;
-  return bizHours > 0 ? bizHours : (pro.cancelMinHours ?? 0);
+  const minHours = bizHours > 0 ? bizHours : (pro.cancelMinHours ?? 0);
+  const timezone = pro.business?.timezone || pro.timezone || 'America/Bogota';
+  return { minHours, timezone };
 }
 
-function assertCancellationWindow(booking, minHours) {
+function assertCancellationWindow(booking, minHours, timezone = 'America/Bogota') {
   if (!minHours) return;
-  const [h, m] = booking.startTime.split(':').map(Number);
-  // booking.date is UTC-midnight of the booking day; startTime is local HH:MM
-  const bookingMs = new Date(booking.date).getTime() + (h * 60 + m) * 60000;
+  const bookingMs = bookingToUTCMs(booking.date, booking.startTime, timezone);
   const hoursLeft = (bookingMs - Date.now()) / 3600000;
   if (hoursLeft < minHours) {
     const err = new Error(
@@ -147,8 +148,8 @@ async function cancelBooking(id, clientId) {
   if (!booking) throw new Error('Booking not found');
   if (booking.clientId !== clientId) throw new Error('Forbidden');
   if (booking.status === 'CANCELLED') throw new Error('Already cancelled');
-  const minHours = await getCancelPolicy(booking.professionalId);
-  assertCancellationWindow(booking, minHours);
+  const { minHours, timezone } = await getCancelPolicy(booking.professionalId);
+  assertCancellationWindow(booking, minHours, timezone);
 
   const cancelled = await prisma.booking.update({
     where: { id },
@@ -222,8 +223,8 @@ async function rescheduleBooking(id, clientId, { date, startTime }) {
   // Validate cancellation policy before allowing reschedule
   const existingForPolicy = await prisma.booking.findUnique({ where: { id } });
   if (existingForPolicy) {
-    const minHours = await getCancelPolicy(existingForPolicy.professionalId);
-    assertCancellationWindow(existingForPolicy, minHours);
+    const { minHours, timezone } = await getCancelPolicy(existingForPolicy.professionalId);
+    assertCancellationWindow(existingForPolicy, minHours, timezone);
   }
 
   const rescheduled = await prisma.$transaction(

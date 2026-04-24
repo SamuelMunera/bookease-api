@@ -1,7 +1,7 @@
 const prisma = require('../config/database');
 const { haversine, geocodeAddress } = require('../utils/geo');
 
-const BUSINESS_EDITABLE = ['name', 'description', 'address', 'city', 'phone', 'category'];
+const BUSINESS_EDITABLE = ['name', 'description', 'address', 'city', 'phone', 'category', 'country', 'timezone', 'state', 'zipCode', 'cancelMinHours'];
 
 async function create(ownerId, data) {
   const clean = Object.fromEntries(Object.entries(data).filter(([k]) => BUSINESS_EDITABLE.includes(k)));
@@ -66,7 +66,7 @@ async function getMyBusiness(ownerId) {
 async function updateProfile(ownerId, data) {
   const business = await prisma.business.findFirst({ where: { ownerId } });
   if (!business) throw new Error('Negocio no encontrado');
-  const allowed = ['name', 'description', 'address', 'city', 'phone', 'category', 'logoUrl', 'cancelMinHours'];
+  const allowed = ['name', 'description', 'address', 'city', 'phone', 'category', 'logoUrl', 'cancelMinHours', 'country', 'timezone', 'state', 'zipCode'];
   const clean = Object.fromEntries(Object.entries(data).filter(([k]) => allowed.includes(k)));
   const updated = await prisma.business.update({ where: { id: business.id }, data: clean });
   // re-geocode if address or city changed

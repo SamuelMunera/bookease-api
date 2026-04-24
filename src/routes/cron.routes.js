@@ -1,41 +1,49 @@
 const router = require('express').Router();
 const prisma  = require('../config/database');
 const { sendBookingReminder } = require('../services/email.service');
+const { tomorrowInTimezone } = require('../utils/timezone');
 const { parseLocalDate } = require('../services/slot.service');
 
-// Protected with CRON_SECRET — only Vercel cron or trusted callers can hit this
 router.get('/reminders', async (req, res) => {
   const secret = process.env.CRON_SECRET;
   if (secret && req.headers['authorization'] !== `Bearer ${secret}`) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  // Find all CONFIRMED bookings for tomorrow
-  const now      = new Date();
-  const tomorrow = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
+  // Collect unique "tomorrow" dates across all timezones we support
+  const timezones = [
+    'America/Bogota', 'America/New_York', 'America/Chicago',
+    'America/Denver', 'America/Los_Angeles', 'America/Phoenix',
+    'America/Anchorage', 'Pacific/Honolulu',
+  ];
+  const tomorrowDates = [...new Set(timezones.map(tz => tomorrowInTimezone(tz)))];
 
   const bookings = await prisma.booking.findMany({
-    where: { date: tomorrow, status: 'CONFIRMED' },
+    where: {
+      date: { in: tomorrowDates.map(d => parseLocalDate(d)) },
+      status: 'CONFIRMED',
+    },
     include: {
       client:       { select: { id: true, name: true, email: true } },
-      professional: { select: { id: true, name: true, user: { select: { email: true } } } },
+      professional: { select: { id: true, name: true, timezone: true, user: { select: { email: true } } } },
       service:      { select: { id: true, name: true } },
       homeService:  { select: { id: true, name: true } },
     },
   });
 
+  // Only send to bookings where "tomorrow" matches the professional's timezone
+  const relevant = bookings.filter(b => {
+    const tz = b.professional?.timezone || 'America/Bogota';
+    return tomorrowInTimezone(tz) === tomorrowDates.find(d => d === tomorrowInTimezone(tz));
+  });
+
   let sent = 0, failed = 0;
-  for (const b of bookings) {
-    try {
-      await sendBookingReminder(b);
-      sent++;
-    } catch (err) {
-      console.error(`[cron] reminder failed booking ${b.id}:`, err.message);
-      failed++;
-    }
+  for (const b of relevant) {
+    try { await sendBookingReminder(b); sent++; }
+    catch (err) { console.error(`[cron] reminder ${b.id}:`, err.message); failed++; }
   }
 
-  res.json({ ok: true, sent, failed, total: bookings.length });
+  res.json({ ok: true, sent, failed, total: relevant.length });
 });
 
 module.exports = router;
