@@ -98,4 +98,18 @@ async function reschedule(req, res) {
   }
 }
 
-module.exports = { create, myBookings, cancel, cancelAsOwner, businessBookings, confirm, reschedule };
+async function manualCreate(req, res) {
+  try {
+    const { professionalId, serviceId, date, startTime, clientEmail, clientName, clientPhone, source } = req.body;
+    const booking = await bookingService.createManualBooking({
+      creatorId: req.user.id, creatorRole: req.user.role,
+      professionalId, serviceId, date, startTime,
+      clientEmail, clientName, clientPhone, source,
+    });
+    res.status(201).json(booking);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+}
+
+module.exports = { create, myBookings, cancel, cancelAsOwner, businessBookings, confirm, reschedule, manualCreate };

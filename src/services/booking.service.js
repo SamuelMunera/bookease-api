@@ -6,6 +6,7 @@ const BOOKING_INCLUDE = {
   professional: { select: { id: true, name: true } },
   service: { select: { id: true, name: true, duration: true, price: true } },
   homeService: { select: { id: true, name: true, duration: true, price: true, surcharge: true } },
+  // scalar fields source, guestName are included automatically
 };
 
 // Returns { effectiveDuration, bufferTime } for a professional+service pair
@@ -272,4 +273,41 @@ async function rescheduleBooking(id, clientId, { date, startTime }) {
   return rescheduled;
 }
 
-module.exports = { createBooking, getUserBookings, cancelBooking, cancelBookingAsOwner, getBusinessBookings, confirmBooking, rescheduleBooking };
+// Manual booking — created by business owner or professional on behalf of a client
+async function createManualBooking({ creatorId, creatorRole, professionalId, serviceId, date, startTime, clientEmail, clientName, clientPhone, source }) {
+  if (!professionalId || !serviceId || !date || !startTime)
+    throw new Error('professionalId, serviceId, date y startTime son obligatorios');
+  if (!clientEmail && !clientName)
+    throw new Error('Proporciona el email o nombre del cliente');
+
+  // Resolve or create client
+  let client = clientEmail
+    ? await prisma.user.findUnique({ where: { email: clientEmail } })
+    : null;
+
+  if (!client) {
+    const bcrypt = require('bcryptjs');
+    const crypto = require('crypto');
+    const tempPass = crypto.randomBytes(16).toString('hex');
+    client = await prisma.user.create({
+      data: {
+        name:     clientName || clientEmail.split('@')[0],
+        email:    clientEmail || `guest-${Date.now()}@bookease.internal`,
+        password: await bcrypt.hash(tempPass, 12),
+        role:     'CLIENT',
+      },
+    });
+  }
+
+  // Reuse core booking logic (validates schedule, conflicts, etc.)
+  const booking = await createBooking({ clientId: client.id, professionalId, serviceId, date, startTime });
+
+  // Stamp source (booking is already created inside transaction — patch after)
+  return prisma.booking.update({
+    where: { id: booking.id },
+    data: { source: source || 'MANUAL', guestName: clientName || null },
+    include: BOOKING_INCLUDE,
+  });
+}
+
+module.exports = { createBooking, getUserBookings, cancelBooking, cancelBookingAsOwner, getBusinessBookings, confirmBooking, rescheduleBooking, createManualBooking };

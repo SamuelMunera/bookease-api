@@ -9,4 +9,16 @@ router.patch('/:id/cancel-owner', authenticate, requireRole('BUSINESS_OWNER'), b
 router.patch('/:id/confirm', authenticate, requireRole('BUSINESS_OWNER'), bookingController.confirm);
 router.patch('/:id/reschedule', authenticate, bookingController.reschedule);
 
+// Client lookup for manual booking UI
+router.get('/clients/search', authenticate, async (req, res) => {
+  const { email } = req.query;
+  if (!email) return res.json(null);
+  const prisma = require('../config/database');
+  const user = await prisma.user.findUnique({
+    where: { email: email.toLowerCase().trim() },
+    select: { id: true, name: true, email: true, phone: true, role: true },
+  });
+  res.json(user && user.role === 'CLIENT' ? user : null);
+});
+
 module.exports = router;

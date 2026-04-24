@@ -34,6 +34,10 @@ router.patch('/me/buffer',         authenticate, requireRole('PROFESSIONAL'), pr
 router.post('/join',             authenticate, requireRole('PROFESSIONAL'), joinRequestController.submitJoinRequest);
 router.get('/me/join-request',   authenticate, requireRole('PROFESSIONAL'), joinRequestController.getMyJoinRequest);
 
+// Manual booking
+const bookingController = require('../controllers/booking.controller');
+router.post('/me/bookings/manual', authenticate, requireRole('PROFESSIONAL'), bookingController.manualCreate);
+
 // Revenue
 const revenueController = require('../controllers/revenue.controller');
 router.get('/me/revenue', authenticate, requireRole('PROFESSIONAL'), revenueController.getProfessionalRevenue);

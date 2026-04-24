@@ -23,6 +23,7 @@ router.get('/:id', businessController.findById);
 router.post('/', authenticate, requireRole('BUSINESS_OWNER'), businessController.create);
 router.put('/:id', authenticate, requireRole('BUSINESS_OWNER'), businessController.update);
 router.delete('/:id', authenticate, requireRole('BUSINESS_OWNER'), businessController.remove);
-router.get('/:id/bookings', authenticate, requireRole('BUSINESS_OWNER'), bookingController.businessBookings);
+router.get('/:id/bookings',        authenticate, requireRole('BUSINESS_OWNER'), bookingController.businessBookings);
+router.post('/:id/bookings/manual', authenticate, requireRole('BUSINESS_OWNER'), bookingController.manualCreate);
 
 module.exports = router;

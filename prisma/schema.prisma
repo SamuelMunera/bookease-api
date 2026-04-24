@@ -207,6 +207,14 @@ enum BookingType {
   HOME_SERVICE
 }
 
+enum BookingSource {
+  ONLINE
+  MANUAL
+  WHATSAPP
+  CALL
+  PRESENCIAL
+}
+
 // Minimal booking — used by slot engine to exclude occupied time
 model Booking {
   id             String        @id @default(cuid())
@@ -219,7 +227,9 @@ model Booking {
   endTime        String
   status         BookingStatus @default(PENDING)
   type           BookingType   @default(BUSINESS)
+  source         BookingSource @default(ONLINE)
   clientAddress  String?
+  guestName      String?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
