@@ -28,7 +28,8 @@ router.delete('/me/schedule/week/:weekStart', authenticate, requireRole('PROFESS
 // Service duration configs
 router.get('/me/service-configs',  authenticate, requireRole('PROFESSIONAL'), professionalController.getServiceConfigs);
 router.put('/me/service-configs',  authenticate, requireRole('PROFESSIONAL'), professionalController.saveServiceConfigs);
-router.patch('/me/buffer',         authenticate, requireRole('PROFESSIONAL'), professionalController.updateBufferTime);
+router.patch('/me/buffer',          authenticate, requireRole('PROFESSIONAL'), professionalController.updateBufferTime);
+router.patch('/me/cancel-policy',  authenticate, requireRole('PROFESSIONAL'), professionalController.updateCancelPolicy);
 
 // Join requests
 router.post('/join',             authenticate, requireRole('PROFESSIONAL'), joinRequestController.submitJoinRequest);

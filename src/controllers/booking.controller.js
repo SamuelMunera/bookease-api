@@ -40,7 +40,8 @@ async function cancel(req, res) {
     const booking = await bookingService.cancelBooking(req.params.id, req.user.id);
     res.json(booking);
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    const status = err.message === 'Forbidden' ? 403 : (err.status || 400);
+    res.status(status).json({ error: err.message, code: err.code });
   }
 }
 
@@ -93,8 +94,8 @@ async function reschedule(req, res) {
     const booking = await bookingService.rescheduleBooking(req.params.id, req.user.id, { date, startTime });
     res.json(booking);
   } catch (err) {
-    const status = err.message === 'Forbidden' ? 403 : 400;
-    res.status(status).json({ error: err.message });
+    const status = err.message === 'Forbidden' ? 403 : (err.status || 400);
+    res.status(status).json({ error: err.message, code: err.code });
   }
 }
 

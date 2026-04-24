@@ -170,6 +170,13 @@ async function updateBufferTime(req, res) {
   } catch (err) { res.status(400).json({ error: err.message }); }
 }
 
+async function updateCancelPolicy(req, res) {
+  try {
+    const pro = await professionalService.updateCancelPolicy(req.user.id, req.body.cancelMinHours);
+    res.json({ cancelMinHours: pro.cancelMinHours });
+  } catch (err) { res.status(400).json({ error: err.message }); }
+}
+
 async function updateProfile(req, res) {
   try {
     const prof = await professionalService.updateProfile(req.user.id, req.body);
@@ -229,4 +236,4 @@ async function unlinkBusiness(req, res) {
   } catch (err) { res.status(400).json({ error: err.message }); }
 }
 
-module.exports = { register, getMe, getMyBookings, getMyServices, setMyServices, getMySchedule, setMySchedule, getWeekSchedule, setWeekSchedule, deleteWeekSchedule, getProfessionalServices, create, findByBusiness, findById, findHomeProfessionals, update, remove, getServiceConfigs, saveServiceConfigs, updateBufferTime, updateProfile, uploadAvatar, unlinkBusiness, getPhotos, uploadPhoto, deletePhoto };
+module.exports = { register, getMe, getMyBookings, getMyServices, setMyServices, getMySchedule, setMySchedule, getWeekSchedule, setWeekSchedule, deleteWeekSchedule, getProfessionalServices, create, findByBusiness, findById, findHomeProfessionals, update, remove, getServiceConfigs, saveServiceConfigs, updateBufferTime, updateCancelPolicy, updateProfile, uploadAvatar, unlinkBusiness, getPhotos, uploadPhoto, deletePhoto };

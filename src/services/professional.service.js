@@ -252,6 +252,15 @@ async function saveServiceConfigs(userId, configs) {
   return prisma.professionalServiceConfig.findMany({ where: { professionalId: prof.id } });
 }
 
+async function updateCancelPolicy(userId, cancelMinHours) {
+  const pro = await prisma.professional.findUnique({ where: { userId } });
+  if (!pro) throw new Error('Professional profile not found');
+  return prisma.professional.update({
+    where: { id: pro.id },
+    data: { cancelMinHours: Math.max(0, parseInt(cancelMinHours, 10) || 0) },
+  });
+}
+
 async function updateBufferTime(userId, bufferTime) {
   const prof = await prisma.professional.findUnique({ where: { userId } });
   if (!prof) throw new Error('Professional profile not found');
@@ -306,4 +315,4 @@ async function unlinkBusiness(userId) {
   });
 }
 
-module.exports = { findHomeProfessionals, registerProfessional, getMyProfile, getMyBookings, getMyServices, setMyServices, getMySchedule, setMySchedule, getWeekSchedule, setWeekSchedule, deleteWeekSchedule, create, findByBusiness, findById, update, remove, getServiceConfigs, saveServiceConfigs, updateBufferTime, updateProfile, unlinkBusiness, getPhotos, addPhoto, deletePhoto };
+module.exports = { findHomeProfessionals, registerProfessional, getMyProfile, getMyBookings, getMyServices, setMyServices, getMySchedule, setMySchedule, getWeekSchedule, setWeekSchedule, deleteWeekSchedule, create, findByBusiness, findById, update, remove, getServiceConfigs, saveServiceConfigs, updateBufferTime, updateCancelPolicy, updateProfile, unlinkBusiness, getPhotos, addPhoto, deletePhoto };

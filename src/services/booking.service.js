@@ -115,11 +115,40 @@ async function getUserBookings(clientId) {
   });
 }
 
+// Returns the effective cancelMinHours for a booking (business policy > pro policy)
+async function getCancelPolicy(professionalId) {
+  const pro = await prisma.professional.findUnique({
+    where:  { id: professionalId },
+    select: { cancelMinHours: true, business: { select: { cancelMinHours: true } } },
+  });
+  if (!pro) return 0;
+  const bizHours = pro.business?.cancelMinHours ?? 0;
+  return bizHours > 0 ? bizHours : (pro.cancelMinHours ?? 0);
+}
+
+function assertCancellationWindow(booking, minHours) {
+  if (!minHours) return;
+  const [h, m] = booking.startTime.split(':').map(Number);
+  // booking.date is UTC-midnight of the booking day; startTime is local HH:MM
+  const bookingMs = new Date(booking.date).getTime() + (h * 60 + m) * 60000;
+  const hoursLeft = (bookingMs - Date.now()) / 3600000;
+  if (hoursLeft < minHours) {
+    const err = new Error(
+      `No puedes cancelar esta reserva. La política requiere al menos ${minHours} hora${minHours !== 1 ? 's' : ''} de anticipación.`
+    );
+    err.status = 422;
+    err.code   = 'CANCELLATION_WINDOW_EXPIRED';
+    throw err;
+  }
+}
+
 async function cancelBooking(id, clientId) {
   const booking = await prisma.booking.findUnique({ where: { id } });
   if (!booking) throw new Error('Booking not found');
   if (booking.clientId !== clientId) throw new Error('Forbidden');
   if (booking.status === 'CANCELLED') throw new Error('Already cancelled');
+  const minHours = await getCancelPolicy(booking.professionalId);
+  assertCancellationWindow(booking, minHours);
 
   const cancelled = await prisma.booking.update({
     where: { id },
@@ -189,6 +218,13 @@ async function rescheduleBooking(id, clientId, { date, startTime }) {
   const now = new Date();
   const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   if (localDate < today) throw new Error('Cannot reschedule to a past date');
+
+  // Validate cancellation policy before allowing reschedule
+  const existingForPolicy = await prisma.booking.findUnique({ where: { id } });
+  if (existingForPolicy) {
+    const minHours = await getCancelPolicy(existingForPolicy.professionalId);
+    assertCancellationWindow(existingForPolicy, minHours);
+  }
 
   const rescheduled = await prisma.$transaction(
     async (tx) => {

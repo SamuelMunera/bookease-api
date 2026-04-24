@@ -66,7 +66,7 @@ async function getMyBusiness(ownerId) {
 async function updateProfile(ownerId, data) {
   const business = await prisma.business.findFirst({ where: { ownerId } });
   if (!business) throw new Error('Negocio no encontrado');
-  const allowed = ['name', 'description', 'address', 'city', 'phone', 'category', 'logoUrl'];
+  const allowed = ['name', 'description', 'address', 'city', 'phone', 'category', 'logoUrl', 'cancelMinHours'];
   const clean = Object.fromEntries(Object.entries(data).filter(([k]) => allowed.includes(k)));
   const updated = await prisma.business.update({ where: { id: business.id }, data: clean });
   // re-geocode if address or city changed

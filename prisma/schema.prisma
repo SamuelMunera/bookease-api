@@ -66,6 +66,7 @@ model Business {
   logoUrl            String?
   joinCode           String?  @unique
   showRevenueToProf  Boolean  @default(false)
+  cancelMinHours     Int      @default(0)
   lat                Float?
   lng                Float?
   owner         User           @relation(fields: [ownerId], references: [id])
@@ -85,8 +86,9 @@ model Professional {
   avatarUrl  String?
   businessId String?
   userId     String?  @unique
-  bufferTime Int      @default(0)
-  createdAt  DateTime @default(now())
+  bufferTime     Int      @default(0)
+  cancelMinHours Int      @default(0)
+  createdAt      DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
   offersHomeService    Boolean  @default(false)
