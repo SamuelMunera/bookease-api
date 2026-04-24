@@ -1,99 +1,201 @@
 const { getResend, FROM } = require('../config/email');
 
-function formatDate(date) {
-  return new Date(date).toLocaleDateString('es-CO', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+const APP_URL = process.env.CLIENT_URL || 'https://bookease.vercel.app';
+
+function isReal(email) {
+  return email && typeof email === 'string' && !email.endsWith('@bookease.internal');
 }
 
-function clientConfirmHtml({ clientName, professionalName, serviceName, date, startTime, endTime }) {
-  return `<div style="font-family:sans-serif;max-width:520px;margin:auto">
-  <h2 style="color:#1a1a1a">Reserva confirmada ✓</h2>
-  <p>Hola <strong>${clientName}</strong>, tu reserva fue creada exitosamente.</p>
-  <table style="width:100%;border-collapse:collapse;margin:16px 0">
-    <tr><td style="padding:8px;color:#555">Servicio</td><td style="padding:8px"><strong>${serviceName}</strong></td></tr>
-    <tr style="background:#f9f9f9"><td style="padding:8px;color:#555">Profesional</td><td style="padding:8px"><strong>${professionalName}</strong></td></tr>
-    <tr><td style="padding:8px;color:#555">Fecha</td><td style="padding:8px"><strong>${formatDate(date)}</strong></td></tr>
-    <tr style="background:#f9f9f9"><td style="padding:8px;color:#555">Hora</td><td style="padding:8px"><strong>${startTime} – ${endTime}</strong></td></tr>
-  </table>
-  <p style="color:#666;font-size:13px">Si necesitas cancelar, hazlo desde la app con anticipación.</p>
-</div>`;
+function fmtDate(d) {
+  return new Date(String(d).slice(0, 10) + 'T00:00:00')
+    .toLocaleDateString('es-CO', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 }
 
-function proConfirmHtml({ professionalName, clientName, serviceName, date, startTime, endTime }) {
-  return `<div style="font-family:sans-serif;max-width:520px;margin:auto">
-  <h2 style="color:#1a1a1a">Nueva reserva agendada</h2>
-  <p>Hola <strong>${professionalName}</strong>, tienes una nueva reserva.</p>
-  <table style="width:100%;border-collapse:collapse;margin:16px 0">
-    <tr><td style="padding:8px;color:#555">Cliente</td><td style="padding:8px"><strong>${clientName}</strong></td></tr>
-    <tr style="background:#f9f9f9"><td style="padding:8px;color:#555">Servicio</td><td style="padding:8px"><strong>${serviceName}</strong></td></tr>
-    <tr><td style="padding:8px;color:#555">Fecha</td><td style="padding:8px"><strong>${formatDate(date)}</strong></td></tr>
-    <tr style="background:#f9f9f9"><td style="padding:8px;color:#555">Hora</td><td style="padding:8px"><strong>${startTime} – ${endTime}</strong></td></tr>
-  </table>
-</div>`;
-}
-
-function clientCancelHtml({ clientName, professionalName, serviceName, date, startTime }) {
-  return `<div style="font-family:sans-serif;max-width:520px;margin:auto">
-  <h2 style="color:#c0392b">Reserva cancelada</h2>
-  <p>Hola <strong>${clientName}</strong>, tu reserva fue cancelada.</p>
-  <table style="width:100%;border-collapse:collapse;margin:16px 0">
-    <tr><td style="padding:8px;color:#555">Servicio</td><td style="padding:8px">${serviceName}</td></tr>
-    <tr style="background:#f9f9f9"><td style="padding:8px;color:#555">Profesional</td><td style="padding:8px">${professionalName}</td></tr>
-    <tr><td style="padding:8px;color:#555">Fecha</td><td style="padding:8px">${formatDate(date)}</td></tr>
-    <tr style="background:#f9f9f9"><td style="padding:8px;color:#555">Hora</td><td style="padding:8px">${startTime}</td></tr>
-  </table>
-</div>`;
-}
-
-function proCancelHtml({ professionalName, clientName, serviceName, date, startTime }) {
-  return `<div style="font-family:sans-serif;max-width:520px;margin:auto">
-  <h2 style="color:#c0392b">Reserva cancelada</h2>
-  <p>Hola <strong>${professionalName}</strong>, la siguiente reserva fue cancelada.</p>
-  <table style="width:100%;border-collapse:collapse;margin:16px 0">
-    <tr><td style="padding:8px;color:#555">Cliente</td><td style="padding:8px">${clientName}</td></tr>
-    <tr style="background:#f9f9f9"><td style="padding:8px;color:#555">Servicio</td><td style="padding:8px">${serviceName}</td></tr>
-    <tr><td style="padding:8px;color:#555">Fecha</td><td style="padding:8px">${formatDate(date)}</td></tr>
-    <tr style="background:#f9f9f9"><td style="padding:8px;color:#555">Hora</td><td style="padding:8px">${startTime}</td></tr>
-  </table>
-</div>`;
-}
-
-async function sendConfirmation(booking, clientEmail, proEmail) {
-  const data = {
-    clientName: booking.clientName,
-    professionalName: booking.professional.name,
-    serviceName: booking.service.name,
-    date: booking.date,
-    startTime: booking.startTime,
-    endTime: booking.endTime,
+function extract(booking) {
+  const isHome    = booking.type === 'HOME_SERVICE';
+  return {
+    clientName:  booking.client?.name || booking.guestName || 'Cliente',
+    clientEmail: booking.client?.email,
+    proName:     booking.professional?.name || '—',
+    proEmail:    booking.professional?.user?.email,
+    service:     booking.service?.name || booking.homeService?.name || '—',
+    date:        fmtDate(booking.date),
+    startTime:   booking.startTime,
+    endTime:     booking.endTime,
+    isHome,
+    address:     isHome ? booking.clientAddress : null,
+    city:        isHome ? booking.clientCity    : null,
   };
-  const sends = [
-    getResend().emails.send({ from: FROM, to: clientEmail, subject: `Reserva confirmada – ${data.serviceName}`, html: clientConfirmHtml(data) }),
-  ];
-  if (proEmail) {
-    sends.push(
-      getResend().emails.send({ from: FROM, to: proEmail, subject: `Nueva reserva – ${data.serviceName}`, html: proConfirmHtml(data) })
-    );
-  }
-  await Promise.all(sends);
 }
 
-async function sendCancellation(booking, clientEmail, proEmail) {
-  const data = {
-    clientName: booking.clientName,
-    professionalName: booking.professional.name,
-    serviceName: booking.service.name,
-    date: booking.date,
-    startTime: booking.startTime,
-  };
-  const sends = [
-    getResend().emails.send({ from: FROM, to: clientEmail, subject: `Reserva cancelada – ${data.serviceName}`, html: clientCancelHtml(data) }),
-  ];
-  if (proEmail) {
-    sends.push(
-      getResend().emails.send({ from: FROM, to: proEmail, subject: `Reserva cancelada – ${data.serviceName}`, html: proCancelHtml(data) })
-    );
-  }
-  await Promise.all(sends);
+/* ── Shared layout wrapper ────────────────────────────────── */
+function layout(content) {
+  return `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  body{margin:0;padding:0;background:#0D0D1E;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+  .wrap{max-width:520px;margin:32px auto;background:#16162A;border:1px solid #2A2A4A;border-radius:16px;overflow:hidden}
+  .header{padding:28px 32px 24px;border-bottom:1px solid #2A2A4A;background:linear-gradient(135deg,#1A1A30,#1E1E35)}
+  .logo{font-size:22px;font-weight:800;color:#fff;letter-spacing:-0.03em}
+  .logo span{color:#D4A853}
+  .body{padding:28px 32px}
+  .title{font-size:20px;font-weight:700;margin:0 0 8px;color:#fff}
+  .sub{font-size:14px;color:#9090B0;margin:0 0 24px;line-height:1.5}
+  .detail-table{width:100%;border-collapse:collapse;margin:0 0 24px}
+  .detail-table td{padding:11px 14px;font-size:14px;border-bottom:1px solid #2A2A4A}
+  .detail-table tr:last-child td{border-bottom:none}
+  .label{color:#6060A0;width:38%}
+  .value{color:#E0E0F0;font-weight:600}
+  .badge{display:inline-block;padding:3px 10px;border-radius:99px;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+  .badge-confirmed{background:rgba(212,168,83,.15);color:#D4A853;border:1px solid rgba(212,168,83,.3)}
+  .badge-cancelled{background:rgba(239,68,68,.12);color:#f87171;border:1px solid rgba(239,68,68,.25)}
+  .badge-reminder{background:rgba(124,92,252,.15);color:#A78BFA;border:1px solid rgba(124,92,252,.3)}
+  .cta{display:block;margin:24px 0 0;padding:13px 24px;background:#D4A853;color:#0A0808 !important;text-decoration:none;border-radius:10px;font-weight:700;font-size:14px;text-align:center}
+  .footer{padding:20px 32px;border-top:1px solid #2A2A4A;font-size:12px;color:#50507A;text-align:center;line-height:1.6}
+  @media(prefers-color-scheme:light){body{background:#F4F4F8}.wrap{background:#fff;border-color:#E4E4F0}.header{background:linear-gradient(135deg,#F8F8FF,#F0F0FA)}.logo{color:#1A1A30}.title{color:#1A1A30}.sub{color:#6060A0}.detail-table td{border-color:#E8E8F4}.label{color:#8080A0}.value{color:#1A1A30}.footer{color:#9090B0;border-color:#E8E8F4}}
+</style></head><body>
+<div class="wrap">${content}</div>
+</body></html>`;
 }
 
-module.exports = { sendConfirmation, sendCancellation };
+/* ── Confirmation ─────────────────────────────────────────── */
+function confirmHtml({ to, name, service, date, startTime, endTime, proOrClient, isHome, address }) {
+  const isClient = to === 'client';
+  const heading  = isClient ? '¡Reserva confirmada!' : 'Nueva reserva agendada';
+  const sub      = isClient
+    ? `Hola <strong style="color:#E0E0F0">${name}</strong>, tu cita quedó registrada.`
+    : `Hola <strong style="color:#E0E0F0">${name}</strong>, tienes una nueva cita.`;
+
+  const rows = [
+    [isClient ? 'Profesional' : 'Cliente', proOrClient],
+    ['Servicio',  service],
+    ['Fecha',     date],
+    ['Hora',      endTime ? `${startTime} – ${endTime}` : startTime],
+    ...(isHome && address ? [['Dirección', address]] : []),
+    ['Modalidad', isHome ? '🏠 A domicilio' : '🏢 En local'],
+  ];
+
+  return layout(`
+    <div class="header">
+      <div class="logo">Book<span>ease</span></div>
+    </div>
+    <div class="body">
+      <span class="badge badge-confirmed">Confirmada</span>
+      <h1 class="title" style="margin-top:12px">${heading}</h1>
+      <p class="sub">${sub}</p>
+      <table class="detail-table">${rows.map(([l,v]) => `<tr><td class="label">${l}</td><td class="value">${v}</td></tr>`).join('')}</table>
+      <a href="${APP_URL}/my-bookings" class="cta">Ver mis reservas</a>
+    </div>
+    <div class="footer">Bookease · No respondas a este correo.<br>Si no hiciste esta reserva, <a href="${APP_URL}" style="color:#D4A853">ingresa a la app</a> y cancélala.</div>
+  `);
+}
+
+/* ── Cancellation ─────────────────────────────────────────── */
+function cancelHtml({ to, name, service, date, startTime, proOrClient }) {
+  const isClient = to === 'client';
+  const heading  = isClient ? 'Tu reserva fue cancelada' : 'Reserva cancelada';
+  const sub      = isClient
+    ? `Hola <strong style="color:#E0E0F0">${name}</strong>, la siguiente cita ya no está activa.`
+    : `Hola <strong style="color:#E0E0F0">${name}</strong>, la siguiente cita fue cancelada.`;
+
+  const rows = [
+    [isClient ? 'Profesional' : 'Cliente', proOrClient],
+    ['Servicio', service],
+    ['Fecha',    date],
+    ['Hora',     startTime],
+  ];
+
+  return layout(`
+    <div class="header">
+      <div class="logo">Book<span>ease</span></div>
+    </div>
+    <div class="body">
+      <span class="badge badge-cancelled">Cancelada</span>
+      <h1 class="title" style="margin-top:12px;color:#f87171">${heading}</h1>
+      <p class="sub">${sub}</p>
+      <table class="detail-table">${rows.map(([l,v]) => `<tr><td class="label">${l}</td><td class="value">${v}</td></tr>`).join('')}</table>
+      ${isClient ? `<a href="${APP_URL}" class="cta">Reservar de nuevo</a>` : ''}
+    </div>
+    <div class="footer">Bookease · No respondas a este correo.</div>
+  `);
+}
+
+/* ── Reminder ─────────────────────────────────────────────── */
+function reminderHtml({ name, service, date, startTime, endTime, proOrClient, isHome, address }) {
+  const rows = [
+    ['Profesional', proOrClient],
+    ['Servicio',    service],
+    ['Fecha',       date],
+    ['Hora',        endTime ? `${startTime} – ${endTime}` : startTime],
+    ...(isHome && address ? [['Dirección', address]] : []),
+    ['Modalidad',   isHome ? '🏠 A domicilio' : '🏢 En local'],
+  ];
+
+  return layout(`
+    <div class="header">
+      <div class="logo">Book<span>ease</span></div>
+    </div>
+    <div class="body">
+      <span class="badge badge-reminder">Recordatorio — mañana</span>
+      <h1 class="title" style="margin-top:12px">Tu cita es mañana</h1>
+      <p class="sub">Hola <strong style="color:#E0E0F0">${name}</strong>, te recordamos que tienes una cita programada para mañana.</p>
+      <table class="detail-table">${rows.map(([l,v]) => `<tr><td class="label">${l}</td><td class="value">${v}</td></tr>`).join('')}</table>
+      <a href="${APP_URL}/my-bookings" class="cta">Ver mis reservas</a>
+    </div>
+    <div class="footer">Bookease · No respondas a este correo.<br>¿No puedes asistir? <a href="${APP_URL}/my-bookings" style="color:#D4A853">Cancela con tiempo</a>.</div>
+  `);
+}
+
+/* ── Send helpers ─────────────────────────────────────────── */
+async function sendBookingConfirmation(booking) {
+  const { clientName, clientEmail, proName, proEmail, service, date, startTime, endTime, isHome, address } = extract(booking);
+  const sends = [];
+
+  if (isReal(clientEmail)) {
+    sends.push(getResend().emails.send({
+      from: FROM, to: clientEmail,
+      subject: `Reserva confirmada – ${service}`,
+      html: confirmHtml({ to:'client', name:clientName, service, date, startTime, endTime, proOrClient:proName, isHome, address }),
+    }));
+  }
+  if (isReal(proEmail)) {
+    sends.push(getResend().emails.send({
+      from: FROM, to: proEmail,
+      subject: `Nueva reserva – ${service}`,
+      html: confirmHtml({ to:'pro', name:proName, service, date, startTime, endTime, proOrClient:clientName, isHome, address }),
+    }));
+  }
+  await Promise.allSettled(sends);
+}
+
+async function sendBookingCancellation(booking) {
+  const { clientName, clientEmail, proName, proEmail, service, date, startTime } = extract(booking);
+  const sends = [];
+
+  if (isReal(clientEmail)) {
+    sends.push(getResend().emails.send({
+      from: FROM, to: clientEmail,
+      subject: `Reserva cancelada – ${service}`,
+      html: cancelHtml({ to:'client', name:clientName, service, date, startTime, proOrClient:proName }),
+    }));
+  }
+  if (isReal(proEmail)) {
+    sends.push(getResend().emails.send({
+      from: FROM, to: proEmail,
+      subject: `Reserva cancelada – ${service}`,
+      html: cancelHtml({ to:'pro', name:proName, service, date, startTime, proOrClient:clientName }),
+    }));
+  }
+  await Promise.allSettled(sends);
+}
+
+async function sendBookingReminder(booking) {
+  const { clientName, clientEmail, proName, service, date, startTime, endTime, isHome, address } = extract(booking);
+  if (!isReal(clientEmail)) return;
+  await getResend().emails.send({
+    from: FROM, to: clientEmail,
+    subject: `Recordatorio: tu cita de ${service} es mañana`,
+    html: reminderHtml({ name:clientName, service, date, startTime, endTime, proOrClient:proName, isHome, address }),
+  });
+}
+
+module.exports = { sendBookingConfirmation, sendBookingCancellation, sendBookingReminder };
