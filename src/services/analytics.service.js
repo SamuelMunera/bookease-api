@@ -62,9 +62,10 @@ function buildAnalytics(bookings, priorClientIds) {
 
     const svcId   = b.serviceId ?? b.homeServiceId ?? '__manual__';
     const svcName = b.service?.name ?? b.homeService?.name ?? 'Sin servicio';
-    if (!serviceMap[svcId]) serviceMap[svcId] = { name: svcName, count: 0, revenue: 0 };
+    if (!serviceMap[svcId]) serviceMap[svcId] = { name: svcName, count: 0, revenue: 0, noShow: 0 };
     serviceMap[svcId].count++;
     if (REVENUE_STATUSES.has(b.status)) serviceMap[svcId].revenue += price + surcharge;
+    if (b.status === 'NO_SHOW') serviceMap[svcId].noShow++;
   }
 
   const newClients       = [...clientsSeen].filter(id => !priorClientIds.has(id)).length;
@@ -79,6 +80,13 @@ function buildAnalytics(bookings, priorClientIds) {
     .sort((a, b) => b.count - a.count)
     .slice(0, 6);
 
+  const noShowRate = total > 0 ? Math.round((noShow / total) * 100) : 0;
+
+  const servicesByNoShow = Object.values(serviceMap)
+    .filter(s => s.noShow > 0)
+    .sort((a, b) => b.noShow - a.noShow)
+    .slice(0, 6);
+
   return {
     summary: { total, confirmed, completed, cancelled, noShow, pending, revenue },
     customers: {
@@ -90,11 +98,13 @@ function buildAnalytics(bookings, priorClientIds) {
     peakHours: hourCounts.map((count, hour) => ({ hour, count })),
     peakDays:  dayCounts.map((count, idx)  => ({ day: idx, label: DAYS_ES[idx], count })),
     topServices,
+    servicesByNoShow,
     insights: {
       peakHour:    hourCounts[peakHourIdx] > 0 ? peakHourIdx : null,
       peakDay:     dayCounts[peakDayIdx]   > 0 ? DAYS_ES[peakDayIdx] : null,
       recurringPct,
       topService:  topServices[0]?.name ?? null,
+      noShowRate,
     },
   };
 }
@@ -148,12 +158,16 @@ async function getBusinessAnalytics(ownerId, period = 'month') {
     if (b.status === 'NO_SHOW')   proMap[pid].noShow++;
   }
 
+  const professionals = Object.values(proMap)
+    .map(p => ({ ...p, noShowRate: p.total > 0 ? Math.round((p.noShow / p.total) * 100) : 0 }))
+    .sort((a, b) => b.revenue - a.revenue);
+
   return {
     period, currency: business.country === 'US' ? 'USD' : 'COP',
     from: from.toISOString().slice(0, 10),
     to:   to.toISOString().slice(0, 10),
     ...analytics,
-    professionals: Object.values(proMap).sort((a, b) => b.revenue - a.revenue),
+    professionals,
   };
 }
 
