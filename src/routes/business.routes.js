@@ -22,6 +22,7 @@ router.get('/verify-email/:token',            businessController.confirmVerifyEm
 router.get('/me/analytics',                   authenticate, requireRole('BUSINESS_OWNER'), analyticsController.businessAnalytics);
 router.patch('/me/settings',                  authenticate, requireRole('BUSINESS_OWNER'), revenueController.updateBusinessSettings);
 
+router.post('/check-duplicate', authenticate, requireRole('BUSINESS_OWNER'), businessController.checkDuplicate);
 router.get('/', businessController.findAll);
 router.get('/:id', businessController.findById);
 router.post('/', authenticate, requireRole('BUSINESS_OWNER'), businessController.create);

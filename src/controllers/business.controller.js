@@ -80,6 +80,15 @@ async function remove(req, res) {
   }
 }
 
+async function checkDuplicate(req, res) {
+  try {
+    const result = await businessService.checkDuplicate(req.body);
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+}
+
 async function sendVerifyEmail(req, res) {
   try {
     const result = await businessService.sendVerificationEmail(req.user.id);
@@ -98,4 +107,4 @@ async function confirmVerifyEmail(req, res) {
   }
 }
 
-module.exports = { create, findAll, findById, getMe, updateProfile, uploadLogo, update, remove, sendVerifyEmail, confirmVerifyEmail };
+module.exports = { create, findAll, findById, getMe, updateProfile, uploadLogo, update, remove, sendVerifyEmail, confirmVerifyEmail, checkDuplicate };

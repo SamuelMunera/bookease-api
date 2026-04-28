@@ -111,6 +111,24 @@ async function verifyEmailToken(token) {
   return { verified: true };
 }
 
+async function checkDuplicate({ name, phone, address }) {
+  const nameNorm    = name    ? normalizeName(name)       : null;
+  const phoneNorm   = phone   ? normalizePhone(phone)     : null;
+  const addressNorm = address ? normalizeAddress(address) : null;
+  if (!nameNorm) return { isDuplicate: false };
+  const candidate = await prisma.business.findFirst({
+    where: {
+      nameNorm,
+      OR: [
+        ...(phoneNorm   ? [{ phoneNorm }]   : []),
+        ...(addressNorm ? [{ addressNorm }]  : []),
+      ],
+    },
+    select: { id: true },
+  });
+  return { isDuplicate: !!candidate };
+}
+
 async function findAll({ category, city, lat, lng, radius } = {}) {
   const userLat = lat ? parseFloat(lat) : null;
   const userLng = lng ? parseFloat(lng) : null;
@@ -213,4 +231,5 @@ module.exports = {
   create, findAll, findById, getMyBusiness,
   updateProfile, update, remove,
   sendVerificationEmail, verifyEmailToken,
+  checkDuplicate,
 };
