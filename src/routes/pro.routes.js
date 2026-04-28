@@ -43,6 +43,10 @@ router.post('/me/bookings/manual', authenticate, requireRole('PROFESSIONAL'), bo
 const revenueController = require('../controllers/revenue.controller');
 router.get('/me/revenue', authenticate, requireRole('PROFESSIONAL'), revenueController.getProfessionalRevenue);
 
+// Analytics
+const analyticsController = require('../controllers/analytics.controller');
+router.get('/me/analytics', authenticate, requireRole('PROFESSIONAL'), analyticsController.professionalAnalytics);
+
 // Home service
 const homeServiceController = require('../controllers/homeService.controller');
 router.get('/me/home-config',              authenticate, requireRole('PROFESSIONAL'), homeServiceController.getHomeConfig);

@@ -3,6 +3,7 @@ const businessController     = require('../controllers/business.controller');
 const bookingController      = require('../controllers/booking.controller');
 const joinRequestController  = require('../controllers/joinRequest.controller');
 const revenueController      = require('../controllers/revenue.controller');
+const analyticsController    = require('../controllers/analytics.controller');
 const { authenticate, requireRole } = require('../middleware/auth');
 const upload = require('../middleware/upload');
 const { uploadLimiter } = require('../middleware/rateLimiters');
@@ -16,6 +17,7 @@ router.get('/me/join-requests',               authenticate, requireRole('BUSINES
 router.patch('/me/join-requests/:id/approve', authenticate, requireRole('BUSINESS_OWNER'), joinRequestController.approveRequest);
 router.patch('/me/join-requests/:id/reject',  authenticate, requireRole('BUSINESS_OWNER'), joinRequestController.rejectRequest);
 router.get('/me/revenue',                     authenticate, requireRole('BUSINESS_OWNER'), revenueController.getBusinessRevenue);
+router.get('/me/analytics',                   authenticate, requireRole('BUSINESS_OWNER'), analyticsController.businessAnalytics);
 router.patch('/me/settings',                  authenticate, requireRole('BUSINESS_OWNER'), revenueController.updateBusinessSettings);
 
 router.get('/', businessController.findAll);
