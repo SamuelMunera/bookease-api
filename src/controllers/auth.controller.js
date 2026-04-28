@@ -66,12 +66,17 @@ async function googleAuth(req, res) {
 
 async function updateMe(req, res) {
   try {
-    const { phone } = req.body;
+    const { phone, country } = req.body;
     const prisma = require('../config/database');
+    const data = {};
+    if (phone !== undefined) data.phone = phone || null;
+    if (country !== undefined && ['CO', 'US'].includes(country?.toUpperCase())) {
+      data.country = country.toUpperCase();
+    }
     const user = await prisma.user.update({
       where: { id: req.user.id },
-      data: { ...(phone !== undefined ? { phone: phone || null } : {}) },
-      select: { id: true, name: true, email: true, role: true, phone: true },
+      data,
+      select: { id: true, name: true, email: true, role: true, phone: true, country: true },
     });
     res.json({ user });
   } catch (err) {

@@ -6,7 +6,7 @@ const { getResend, FROM } = require('../config/email');
 
 const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]{1,255}\.[^\s@]{2,}$/;
 
-async function register({ name, email, password, role, phone }) {
+async function register({ name, email, password, role, phone, country }) {
   if (!name || !email || !password) throw new Error('name, email and password are required');
   if (typeof name !== 'string' || name.trim().length < 2 || name.trim().length > 100)
     throw new Error('El nombre debe tener entre 2 y 100 caracteres');
@@ -17,14 +17,15 @@ async function register({ name, email, password, role, phone }) {
 
   const ALLOWED_ROLES = ['CLIENT', 'BUSINESS_OWNER'];
   const safeRole = ALLOWED_ROLES.includes(role?.toUpperCase()) ? role.toUpperCase() : 'CLIENT';
+  const safeCountry = ['CO', 'US'].includes(country?.toUpperCase()) ? country.toUpperCase() : 'CO';
 
   const existing = await prisma.user.findUnique({ where: { email: email.toLowerCase().trim() } });
   if (existing) throw new Error('Email already registered');
 
   const hashed = await bcrypt.hash(password, 12);
   const user = await prisma.user.create({
-    data: { name: name.trim(), email: email.toLowerCase().trim(), password: hashed, role: safeRole, ...(phone ? { phone } : {}) },
-    select: { id: true, name: true, email: true, role: true },
+    data: { name: name.trim(), email: email.toLowerCase().trim(), password: hashed, role: safeRole, country: safeCountry, ...(phone ? { phone } : {}) },
+    select: { id: true, name: true, email: true, role: true, country: true },
   });
 
   const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET, {
@@ -46,7 +47,7 @@ async function login({ email, password }) {
   });
 
   return {
-    user: { id: user.id, name: user.name, email: user.email, role: user.role },
+    user: { id: user.id, name: user.name, email: user.email, role: user.role, country: user.country },
     token,
   };
 }
