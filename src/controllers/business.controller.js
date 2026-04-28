@@ -80,4 +80,22 @@ async function remove(req, res) {
   }
 }
 
-module.exports = { create, findAll, findById, getMe, updateProfile, uploadLogo, update, remove };
+async function sendVerifyEmail(req, res) {
+  try {
+    const result = await businessService.sendVerificationEmail(req.user.id);
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+}
+
+async function confirmVerifyEmail(req, res) {
+  try {
+    const result = await businessService.verifyEmailToken(req.params.token);
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+}
+
+module.exports = { create, findAll, findById, getMe, updateProfile, uploadLogo, update, remove, sendVerifyEmail, confirmVerifyEmail };

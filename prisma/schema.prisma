@@ -74,6 +74,12 @@ model Business {
   zipCode            String?
   lat                Float?
   lng                Float?
+  emailVerified      Boolean   @default(false)
+  emailVerifyToken   String?   @unique
+  emailVerifyExpiry  DateTime?
+  nameNorm           String?
+  phoneNorm          String?
+  addressNorm        String?
   owner         User           @relation(fields: [ownerId], references: [id])
   professionals Professional[]
   services      Service[]
