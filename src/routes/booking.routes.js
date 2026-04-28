@@ -8,6 +8,8 @@ router.patch('/:id/cancel', authenticate, bookingController.cancel);
 router.patch('/:id/cancel-owner', authenticate, requireRole('BUSINESS_OWNER'), bookingController.cancelAsOwner);
 router.patch('/:id/confirm', authenticate, requireRole('BUSINESS_OWNER'), bookingController.confirm);
 router.patch('/:id/reschedule', authenticate, bookingController.reschedule);
+router.patch('/:id/no-show', authenticate, bookingController.noShow);
+router.patch('/:id/complete', authenticate, bookingController.complete);
 
 // Client lookup for manual booking UI
 router.get('/clients/search', authenticate, async (req, res) => {

@@ -346,4 +346,63 @@ async function createManualBooking({ creatorId, creatorRole, professionalId, ser
   });
 }
 
-module.exports = { createBooking, getUserBookings, cancelBooking, cancelBookingAsOwner, getBusinessBookings, confirmBooking, rescheduleBooking, createManualBooking };
+// Shared auth check: professional OR business owner of that professional
+async function assertCanManageBooking(booking, userId) {
+  const pro = await prisma.professional.findUnique({
+    where: { id: booking.professionalId },
+    select: { userId: true, business: { select: { ownerId: true } } },
+  });
+  if (!pro) throw new Error('Professional not found');
+  const isOwnPro  = pro.userId === userId;
+  const isBizOwner = pro.business?.ownerId === userId;
+  if (!isOwnPro && !isBizOwner) throw new Error('Forbidden');
+}
+
+function assertIsInPast(booking, timezone = 'America/Bogota') {
+  const bookingMs = bookingToUTCMs(booking.date, booking.startTime, timezone);
+  if (bookingMs > Date.now()) throw new Error('Solo puedes marcar esto para citas que ya pasaron.');
+}
+
+async function getTimezoneForBooking(professionalId) {
+  const pro = await prisma.professional.findUnique({
+    where: { id: professionalId },
+    select: { timezone: true, business: { select: { timezone: true } } },
+  });
+  return pro?.business?.timezone ?? pro?.timezone ?? 'America/Bogota';
+}
+
+const TERMINAL_STATUSES = new Set(['CANCELLED', 'COMPLETED', 'NO_SHOW']);
+
+async function markNoShow(id, userId) {
+  const booking = await prisma.booking.findUnique({ where: { id } });
+  if (!booking) throw new Error('Booking not found');
+  if (TERMINAL_STATUSES.has(booking.status)) {
+    throw new Error(`No se puede marcar como no-show: la cita ya está ${booking.status.toLowerCase()}.`);
+  }
+  await assertCanManageBooking(booking, userId);
+  const tz = await getTimezoneForBooking(booking.professionalId);
+  assertIsInPast(booking, tz);
+  return prisma.booking.update({
+    where: { id },
+    data: { status: 'NO_SHOW' },
+    include: BOOKING_INCLUDE,
+  });
+}
+
+async function markComplete(id, userId) {
+  const booking = await prisma.booking.findUnique({ where: { id } });
+  if (!booking) throw new Error('Booking not found');
+  if (TERMINAL_STATUSES.has(booking.status)) {
+    throw new Error(`No se puede completar: la cita ya está ${booking.status.toLowerCase()}.`);
+  }
+  await assertCanManageBooking(booking, userId);
+  const tz = await getTimezoneForBooking(booking.professionalId);
+  assertIsInPast(booking, tz);
+  return prisma.booking.update({
+    where: { id },
+    data: { status: 'COMPLETED' },
+    include: BOOKING_INCLUDE,
+  });
+}
+
+module.exports = { createBooking, getUserBookings, cancelBooking, cancelBookingAsOwner, getBusinessBookings, confirmBooking, rescheduleBooking, createManualBooking, markNoShow, markComplete };

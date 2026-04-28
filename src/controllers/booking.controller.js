@@ -113,4 +113,24 @@ async function manualCreate(req, res) {
   }
 }
 
-module.exports = { create, myBookings, cancel, cancelAsOwner, businessBookings, confirm, reschedule, manualCreate };
+async function noShow(req, res) {
+  try {
+    const booking = await bookingService.markNoShow(req.params.id, req.user.id);
+    res.json(booking);
+  } catch (err) {
+    const status = err.message === 'Forbidden' ? 403 : 400;
+    res.status(status).json({ error: err.message });
+  }
+}
+
+async function complete(req, res) {
+  try {
+    const booking = await bookingService.markComplete(req.params.id, req.user.id);
+    res.json(booking);
+  } catch (err) {
+    const status = err.message === 'Forbidden' ? 403 : 400;
+    res.status(status).json({ error: err.message });
+  }
+}
+
+module.exports = { create, myBookings, cancel, cancelAsOwner, businessBookings, confirm, reschedule, manualCreate, noShow, complete };
