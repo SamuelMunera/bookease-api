@@ -22,7 +22,8 @@ async function create(req, res) {
     });
     res.status(201).json(booking);
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    const status = err.code === 'SLOT_CONFLICT' ? 409 : 400;
+    res.status(status).json({ error: err.message, code: err.code });
   }
 }
 
@@ -94,7 +95,7 @@ async function reschedule(req, res) {
     const booking = await bookingService.rescheduleBooking(req.params.id, req.user.id, { date, startTime });
     res.json(booking);
   } catch (err) {
-    const status = err.message === 'Forbidden' ? 403 : (err.status || 400);
+    const status = err.message === 'Forbidden' ? 403 : err.code === 'SLOT_CONFLICT' ? 409 : (err.status || 400);
     res.status(status).json({ error: err.message, code: err.code });
   }
 }
@@ -109,7 +110,8 @@ async function manualCreate(req, res) {
     });
     res.status(201).json(booking);
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    const status = err.code === 'SLOT_CONFLICT' ? 409 : 400;
+    res.status(status).json({ error: err.message, code: err.code });
   }
 }
 

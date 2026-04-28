@@ -2,6 +2,7 @@ const prisma = require('../config/database');
 const { toMinutes, toTime, parseLocalDate, overlaps } = require('./slot.service');
 const emailService = require('./email.service');
 const { bookingToUTCMs } = require('../utils/timezone');
+const { retryOnConflict } = require('../utils/retry');
 
 const BOOKING_INCLUDE = {
   client: { select: { id: true, name: true, email: true, phone: true } },
@@ -33,7 +34,7 @@ async function createBooking({ clientId, professionalId, serviceId, date, startT
   const [_dy, _dm, _dd] = date.split('-').map(Number);
   const dayOfWeek = new Date(_dy, _dm - 1, _dd).getDay();
 
-  const booking = await prisma.$transaction(
+  const booking = await retryOnConflict(() => prisma.$transaction(
     async (tx) => {
       const service = await tx.service.findUnique({ where: { id: serviceId } });
       if (!service) throw new Error('Service not found');
@@ -93,7 +94,12 @@ async function createBooking({ clientId, professionalId, serviceId, date, startT
         const bEnd   = toMinutes(b.endTime) + bufferTime; // existing booking blocks until end + buffer
         return overlaps(slotStart, slotEnd, bStart, bEnd);
       });
-      if (conflict) throw new Error('Slot is no longer available');
+      if (conflict) {
+        console.warn(`[booking] slot conflict: prof=${professionalId} date=${date} slot=${startTime}`);
+        const err = new Error('Slot is no longer available');
+        err.code = 'SLOT_CONFLICT';
+        throw err;
+      }
 
       return tx.booking.create({
         data: { clientId, professionalId, serviceId, date: localDate, startTime, endTime, status: 'CONFIRMED' },
@@ -101,7 +107,7 @@ async function createBooking({ clientId, professionalId, serviceId, date, startT
       });
     },
     { isolationLevel: 'Serializable' }
-  );
+  ));
 
 
   emailService.sendBookingConfirmation(booking).catch(e => console.error('[email] confirmation:', e.message));
@@ -227,7 +233,7 @@ async function rescheduleBooking(id, clientId, { date, startTime }) {
     assertCancellationWindow(existingForPolicy, minHours, timezone);
   }
 
-  const rescheduled = await prisma.$transaction(
+  const rescheduled = await retryOnConflict(() => prisma.$transaction(
     async (tx) => {
       const existing = await tx.booking.findUnique({
         where: { id },
@@ -294,7 +300,12 @@ async function rescheduleBooking(id, clientId, { date, startTime }) {
         const bEnd   = toMinutes(b.endTime) + bufferTime;
         return overlaps(slotStart, slotEnd, bStart, bEnd);
       });
-      if (conflict) throw new Error('Slot is no longer available');
+      if (conflict) {
+        console.warn(`[booking] reschedule conflict: prof=${professionalId} date=${date} slot=${startTime}`);
+        const err = new Error('Slot is no longer available');
+        err.code = 'SLOT_CONFLICT';
+        throw err;
+      }
 
       return tx.booking.update({
         where: { id },
@@ -303,8 +314,7 @@ async function rescheduleBooking(id, clientId, { date, startTime }) {
       });
     },
     { isolationLevel: 'Serializable' }
-  );
-
+  ));
 
   return rescheduled;
 }

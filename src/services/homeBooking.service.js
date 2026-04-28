@@ -2,6 +2,7 @@ const prisma = require('../config/database');
 const { toMinutes, toTime, parseLocalDate, overlaps } = require('./slot.service');
 const { checkCoverage } = require('./homeService.service');
 const emailService = require('./email.service');
+const { retryOnConflict } = require('../utils/retry');
 
 const HOME_BOOKING_INCLUDE = {
   client: { select: { id: true, name: true, email: true, phone: true } },
@@ -24,7 +25,7 @@ async function createHomeBooking({ clientId, professionalId, homeServiceId, date
   const [_dy, _dm, _dd] = date.split('-').map(Number);
   const dayOfWeek = new Date(_dy, _dm - 1, _dd).getDay();
 
-  const booking = await prisma.$transaction(
+  const booking = await retryOnConflict(() => prisma.$transaction(
     async (tx) => {
       const homeService = await tx.homeService.findUnique({ where: { id: homeServiceId } });
       if (!homeService || !homeService.isActive) throw new Error('Home service not found or inactive');
@@ -73,7 +74,12 @@ async function createHomeBooking({ clientId, professionalId, homeServiceId, date
         const bEnd   = toMinutes(b.endTime) + bufferTime;
         return overlaps(slotStart, slotEnd, bStart, bEnd);
       });
-      if (conflict) throw new Error('Slot is no longer available');
+      if (conflict) {
+        console.warn(`[booking] slot conflict (home): prof=${professionalId} date=${date} slot=${startTime}`);
+        const err = new Error('Slot is no longer available');
+        err.code = 'SLOT_CONFLICT';
+        throw err;
+      }
 
       return tx.booking.create({
         data: {
@@ -91,7 +97,7 @@ async function createHomeBooking({ clientId, professionalId, homeServiceId, date
       });
     },
     { isolationLevel: 'Serializable' }
-  );
+  ));
 
   emailService.sendBookingConfirmation(booking).catch(e => console.error('[email] home confirmation:', e.message));
   return booking;

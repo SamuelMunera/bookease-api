@@ -106,7 +106,10 @@ async function createHomeBooking(req, res) {
       clientCity,
     });
     res.status(201).json(booking);
-  } catch (err) { res.status(400).json({ error: err.message }); }
+  } catch (err) {
+    const status = err.code === 'SLOT_CONFLICT' ? 409 : 400;
+    res.status(status).json({ error: err.message, code: err.code });
+  }
 }
 
 async function cancelHomeBooking(req, res) {
