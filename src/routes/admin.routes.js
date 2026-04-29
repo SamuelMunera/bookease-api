@@ -39,6 +39,7 @@ router.get('/businesses', async (_req, res) => {
       phone: b.phone,
       address: b.address,
       plan: b.plan ?? 'team',
+      paymentGateway: b.paymentGateway ?? null,
       serviceCount: b._count.services,
       professionalCount: b._count.professionals,
       bookingCount: b.professionals.reduce((s, p) => s + p._count.bookings, 0),

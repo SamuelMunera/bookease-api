@@ -7,6 +7,8 @@ const analyticsController    = require('../controllers/analytics.controller');
 const { authenticate, requireRole } = require('../middleware/auth');
 const upload = require('../middleware/upload');
 const { uploadLimiter } = require('../middleware/rateLimiters');
+const { DEFAULT_GATEWAY_BY_COUNTRY } = require('../config/gateways');
+const prisma = require('../config/database');
 
 // Plans (public — country via query param)
 router.get('/plans', (req, res) => {
@@ -29,6 +31,22 @@ router.get('/verify-email/:token',            businessController.confirmVerifyEm
 router.get('/me/analytics',                   authenticate, requireRole('BUSINESS_OWNER'), analyticsController.businessAnalytics);
 router.patch('/me/settings',                  authenticate, requireRole('BUSINESS_OWNER'), revenueController.updateBusinessSettings);
 router.patch('/me/plan',                      authenticate, requireRole('BUSINESS_OWNER'), businessController.updatePlan);
+router.get('/me/gateway', authenticate, requireRole('BUSINESS_OWNER'), async (req, res) => {
+  try {
+    const business = await prisma.business.findFirst({
+      where: { ownerId: req.user.id },
+      select: { country: true, paymentGateway: true },
+    });
+    if (!business) return res.status(404).json({ error: 'Negocio no encontrado' });
+    res.json({
+      country: business.country,
+      paymentGateway: business.paymentGateway,
+      defaultForCountry: DEFAULT_GATEWAY_BY_COUNTRY[business.country] ?? null,
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 router.post('/check-duplicate', authenticate, requireRole('BUSINESS_OWNER'), businessController.checkDuplicate);
 router.get('/', businessController.findAll);
