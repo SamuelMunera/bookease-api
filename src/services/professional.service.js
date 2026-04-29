@@ -2,6 +2,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const prisma = require('../config/database');
 const { getPlanLimit } = require('../config/plans');
+const subscriptionService = require('./subscription.service');
 
 async function registerProfessional({ name, email, password, phone, specialty, bio, experience, businessId, offersHomeService, homeServiceArea, country, timezone, state, zipCode }) {
   if (!name || !email || !password) throw new Error('name, email and password are required');
@@ -52,6 +53,12 @@ async function registerProfessional({ name, email, password, phone, specialty, b
   const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRES_IN || '7d',
   });
+
+  // Solo professionals (no businessId) get their own subscription
+  if (!businessId && user.professional) {
+    const proCountry = country || 'CO';
+    subscriptionService.createForProfessional(user.professional.id, 'solo', proCountry).catch(() => {});
+  }
 
   return { user, token };
 }

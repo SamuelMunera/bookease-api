@@ -113,9 +113,16 @@ async function updatePlan(req, res) {
     const VALID_PLANS = ['solo', 'team', 'studio', 'enterprise'];
     if (!VALID_PLANS.includes(plan)) return res.status(400).json({ error: 'Plan inválido' });
     const prisma = require('../config/database');
-    const business = await prisma.business.findFirst({ where: { ownerId: req.user.id } });
+    const subscriptionService = require('../services/subscription.service');
+    const business = await prisma.business.findFirst({
+      where: { ownerId: req.user.id },
+      include: { subscription: true },
+    });
     if (!business) return res.status(404).json({ error: 'Negocio no encontrado' });
     const updated = await prisma.business.update({ where: { id: business.id }, data: { plan } });
+    if (business.subscription) {
+      await subscriptionService.changePlan(business.subscription.id, plan);
+    }
     res.json({ plan: updated.plan });
   } catch (err) {
     res.status(400).json({ error: err.message });

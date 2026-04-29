@@ -6,6 +6,7 @@ const { validateAddress } = require('../utils/addressValidation');
 const { getResend, FROM } = require('../config/email');
 const { businessVerifyEmail } = require('../utils/emailTemplates');
 const { getDefaultGateway } = require('../config/gateways');
+const subscriptionService = require('./subscription.service');
 
 const APP_URL = process.env.APP_URL || 'http://localhost:5173';
 
@@ -94,6 +95,8 @@ async function create(ownerId, data) {
   geocodeAddress(business.address, business.city).then(coords => {
     if (coords) prisma.business.update({ where: { id: business.id }, data: coords }).catch(() => {});
   });
+
+  subscriptionService.createForBusiness(business.id, business.plan, business.country).catch(() => {});
 
   const owner = await prisma.user.findUnique({ where: { id: ownerId }, select: { email: true } });
   if (owner) sendVerifyEmailFor(business.id, owner.email).catch(() => {});

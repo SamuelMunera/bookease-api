@@ -2,6 +2,7 @@ const router = require('express').Router();
 const { authenticate, requireRole } = require('../middleware/auth');
 const prisma = require('../config/database');
 const { getPlanLimit } = require('../config/plans');
+const subscriptionService = require('../services/subscription.service');
 
 const VALID_PLANS = ['solo', 'team', 'studio', 'enterprise'];
 
@@ -108,6 +109,10 @@ router.patch('/businesses/:id/plan', async (req, res) => {
 
     const updated = await prisma.business.update({ where: { id: req.params.id }, data: { plan } });
 
+    // Keep subscription in sync
+    const sub = await subscriptionService.getByBusiness(req.params.id);
+    if (sub) await subscriptionService.changePlan(sub.id, plan);
+
     const newLimit   = getPlanLimit(plan);
     const currentCount = biz.professionals.length;
     const response   = { plan: updated.plan };
@@ -132,6 +137,11 @@ router.patch('/professionals/:id/plan', async (req, res) => {
     if (!pro) return res.status(404).json({ error: 'Profesional no encontrado' });
 
     const updated = await prisma.professional.update({ where: { id: req.params.id }, data: { plan } });
+
+    // Keep subscription in sync for solo professionals
+    const sub = await subscriptionService.getByProfessional(req.params.id);
+    if (sub) await subscriptionService.changePlan(sub.id, plan);
+
     console.log(`[admin] plan cambio: professional=${req.params.id} oldPlan=${pro.plan} newPlan=${plan} by=${req.user.id}`);
     res.json({ plan: updated.plan });
   } catch (err) {
