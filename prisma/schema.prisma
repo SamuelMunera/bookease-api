@@ -76,6 +76,7 @@ model Business {
   lng                Float?
   emailVerified      Boolean   @default(false)
   plan               String   @default("team")
+  paymentGateway     String?
   emailVerifyToken   String?   @unique
   emailVerifyExpiry  DateTime?
   nameNorm           String?
