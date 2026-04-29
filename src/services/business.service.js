@@ -5,6 +5,7 @@ const { normalizeName, normalizePhone, normalizeAddress } = require('../utils/no
 const { validateAddress } = require('../utils/addressValidation');
 const { getResend, FROM } = require('../config/email');
 const { businessVerifyEmail } = require('../utils/emailTemplates');
+const { getDefaultGateway } = require('../config/gateways');
 
 const APP_URL = process.env.APP_URL || 'http://localhost:5173';
 
@@ -15,7 +16,7 @@ const PUBLIC_BUSINESS_SELECT = {
   phone: true, category: true, logoUrl: true, country: true, timezone: true,
   state: true, zipCode: true, lat: true, lng: true,
   emailVerified: true, cancelMinHours: true, createdAt: true,
-  ownerId: true, plan: true, showRevenueToProf: true,
+  ownerId: true, plan: true, paymentGateway: true, showRevenueToProf: true,
   professionals: {
     select: { id: true, name: true, bio: true, specialty: true, avatarUrl: true, userId: true },
   },
@@ -85,8 +86,9 @@ async function create(ownerId, data) {
     }
   }
 
+  const paymentGateway = getDefaultGateway(clean.country || 'CO');
   const business = await prisma.business.create({
-    data: { ...clean, ownerId, nameNorm, phoneNorm, addressNorm },
+    data: { ...clean, ownerId, nameNorm, phoneNorm, addressNorm, paymentGateway },
   });
 
   geocodeAddress(business.address, business.city).then(coords => {
@@ -224,6 +226,10 @@ async function updateProfile(ownerId, data) {
   if (clean.name)    norms.nameNorm    = normalizeName(clean.name);
   if (clean.phone)   norms.phoneNorm   = normalizePhone(clean.phone);
   if (clean.address) norms.addressNorm = normalizeAddress(clean.address);
+
+  if (clean.country) {
+    clean.paymentGateway = getDefaultGateway(clean.country);
+  }
 
   const updated = await prisma.business.update({ where: { id: business.id }, data: { ...clean, ...norms } });
 
