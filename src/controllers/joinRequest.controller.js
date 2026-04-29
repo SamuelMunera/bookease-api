@@ -34,7 +34,10 @@ async function approveRequest(req, res) {
   try {
     const result = await svc.approveRequest(req.user.id, req.params.id);
     res.json(result);
-  } catch (err) { res.status(400).json({ error: err.message }); }
+  } catch (err) {
+    const status = err.code === 'PLAN_LIMIT_EXCEEDED' ? 403 : 400;
+    res.status(status).json({ error: err.message, code: err.code });
+  }
 }
 
 async function rejectRequest(req, res) {

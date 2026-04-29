@@ -1,4 +1,5 @@
 const prisma = require('../config/database');
+const { getPlanLimit } = require('../config/plans');
 
 function generateCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -71,8 +72,21 @@ async function getBusinessJoinRequests(ownerId) {
 }
 
 async function approveRequest(ownerId, requestId) {
-  const business = await prisma.business.findFirst({ where: { ownerId } });
+  const business = await prisma.business.findFirst({
+    where: { ownerId },
+    include: { professionals: { select: { id: true } } },
+  });
   if (!business) throw new Error('No se encontró un negocio para este usuario');
+
+  const limit = getPlanLimit(business.plan ?? 'team');
+  if (business.professionals.length >= limit) {
+    const planNames = { solo:'Independiente', team:'Equipo', studio:'Estudio', enterprise:'Empresarial' };
+    const err = new Error(
+      `Tu plan ${planNames[business.plan] ?? business.plan} permite máximo ${limit} profesional${limit !== 1 ? 'es' : ''}. Actualiza tu plan para agregar más.`
+    );
+    err.code = 'PLAN_LIMIT_EXCEEDED';
+    throw err;
+  }
 
   const joinReq = await prisma.joinRequest.findFirst({ where: { id: requestId, businessId: business.id } });
   if (!joinReq) throw new Error('Solicitud no encontrada');
