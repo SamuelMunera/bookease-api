@@ -75,6 +75,7 @@ model Business {
   lat                Float?
   lng                Float?
   emailVerified      Boolean   @default(false)
+  plan               String   @default("team")
   emailVerifyToken   String?   @unique
   emailVerifyExpiry  DateTime?
   nameNorm           String?
@@ -103,6 +104,7 @@ model Professional {
   timezone       String   @default("America/Bogota")
   state          String?
   zipCode        String?
+  plan           String   @default("solo")
   createdAt      DateTime @default(now())
   updatedAt  DateTime @updatedAt
 

@@ -8,6 +8,13 @@ const { authenticate, requireRole } = require('../middleware/auth');
 const upload = require('../middleware/upload');
 const { uploadLimiter } = require('../middleware/rateLimiters');
 
+// Plans (public — country via query param)
+router.get('/plans', (req, res) => {
+  const { getPlansForCountry } = require('../config/plans');
+  const country = (['CO','US'].includes(req.query.country)) ? req.query.country : 'CO';
+  res.json(getPlansForCountry(country));
+});
+
 // Owner endpoints (must be before /:id)
 router.get('/me',                             authenticate, requireRole('BUSINESS_OWNER'), businessController.getMe);
 router.patch('/me/profile',                   authenticate, requireRole('BUSINESS_OWNER'), businessController.updateProfile);
@@ -21,6 +28,7 @@ router.post('/me/verify-email/send',          authenticate, requireRole('BUSINES
 router.get('/verify-email/:token',            businessController.confirmVerifyEmail);
 router.get('/me/analytics',                   authenticate, requireRole('BUSINESS_OWNER'), analyticsController.businessAnalytics);
 router.patch('/me/settings',                  authenticate, requireRole('BUSINESS_OWNER'), revenueController.updateBusinessSettings);
+router.patch('/me/plan',                      authenticate, requireRole('BUSINESS_OWNER'), businessController.updatePlan);
 
 router.post('/check-duplicate', authenticate, requireRole('BUSINESS_OWNER'), businessController.checkDuplicate);
 router.get('/', businessController.findAll);

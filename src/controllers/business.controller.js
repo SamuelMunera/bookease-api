@@ -107,4 +107,19 @@ async function confirmVerifyEmail(req, res) {
   }
 }
 
-module.exports = { create, findAll, findById, getMe, updateProfile, uploadLogo, update, remove, sendVerifyEmail, confirmVerifyEmail, checkDuplicate };
+async function updatePlan(req, res) {
+  try {
+    const { plan } = req.body;
+    const VALID_PLANS = ['solo', 'team', 'studio', 'enterprise'];
+    if (!VALID_PLANS.includes(plan)) return res.status(400).json({ error: 'Plan inválido' });
+    const prisma = require('../config/database');
+    const business = await prisma.business.findFirst({ where: { ownerId: req.user.id } });
+    if (!business) return res.status(404).json({ error: 'Negocio no encontrado' });
+    const updated = await prisma.business.update({ where: { id: business.id }, data: { plan } });
+    res.json({ plan: updated.plan });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+}
+
+module.exports = { create, findAll, findById, getMe, updateProfile, uploadLogo, update, remove, sendVerifyEmail, confirmVerifyEmail, checkDuplicate, updatePlan };
