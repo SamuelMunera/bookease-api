@@ -1,6 +1,7 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const prisma = require('../config/database');
+const { getPlanLimit } = require('../config/plans');
 
 async function registerProfessional({ name, email, password, phone, specialty, bio, experience, businessId, offersHomeService, homeServiceArea, country, timezone, state, zipCode }) {
   if (!name || !email || !password) throw new Error('name, email and password are required');
@@ -8,6 +9,21 @@ async function registerProfessional({ name, email, password, phone, specialty, b
 
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) throw new Error('Email already registered');
+
+  if (businessId) {
+    const biz = await prisma.business.findUnique({
+      where: { id: businessId },
+      include: { professionals: { select: { id: true } } },
+    });
+    if (biz) {
+      const limit = getPlanLimit(biz.plan ?? 'team');
+      if (biz.professionals.length >= limit) {
+        const err = new Error(`El negocio ha alcanzado el límite de su plan (${limit} profesional${limit !== 1 ? 'es' : ''}). Actualiza el plan para continuar.`);
+        err.code = 'PLAN_LIMIT_EXCEEDED';
+        throw err;
+      }
+    }
+  }
 
   const hashed = await bcrypt.hash(password, 12);
 
@@ -150,6 +166,17 @@ async function deleteWeekSchedule(userId, weekStart) {
 }
 
 async function create(businessId, data) {
+  const biz = await prisma.business.findUnique({
+    where: { id: businessId },
+    include: { professionals: { select: { id: true } } },
+  });
+  if (!biz) throw new Error('Business not found');
+  const limit = getPlanLimit(biz.plan ?? 'team');
+  if (biz.professionals.length >= limit) {
+    const err = new Error(`El plan del negocio permite máximo ${limit} profesional${limit !== 1 ? 'es' : ''}. Actualiza el plan para agregar más.`);
+    err.code = 'PLAN_LIMIT_EXCEEDED';
+    throw err;
+  }
   const allowed = ['name', 'bio', 'phone', 'specialty', 'experience'];
   const clean = Object.fromEntries(Object.entries(data).filter(([k]) => allowed.includes(k)));
   return prisma.professional.create({ data: { ...clean, businessId } });

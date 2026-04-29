@@ -1,6 +1,9 @@
 const router = require('express').Router();
 const { authenticate, requireRole } = require('../middleware/auth');
 const prisma = require('../config/database');
+const { getPlanLimit } = require('../config/plans');
+
+const VALID_PLANS = ['solo', 'team', 'studio', 'enterprise'];
 
 router.use(authenticate, requireRole('ADMIN'));
 
@@ -32,8 +35,10 @@ router.get('/businesses', async (_req, res) => {
       name: b.name,
       category: b.category,
       city: b.city,
+      country: b.country,
       phone: b.phone,
       address: b.address,
+      plan: b.plan ?? 'team',
       serviceCount: b._count.services,
       professionalCount: b._count.professionals,
       bookingCount: b.professionals.reduce((s, p) => s + p._count.bookings, 0),
@@ -84,6 +89,52 @@ router.get('/professionals', async (_req, res) => {
     res.json(professionals);
   } catch {
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── Plan management ──────────────────────────────────────────────────────────
+
+router.patch('/businesses/:id/plan', async (req, res) => {
+  try {
+    const { plan } = req.body;
+    if (!VALID_PLANS.includes(plan)) return res.status(400).json({ error: 'Plan inválido' });
+
+    const biz = await prisma.business.findUnique({
+      where: { id: req.params.id },
+      include: { professionals: { select: { id: true } } },
+    });
+    if (!biz) return res.status(404).json({ error: 'Negocio no encontrado' });
+
+    const updated = await prisma.business.update({ where: { id: req.params.id }, data: { plan } });
+
+    const newLimit   = getPlanLimit(plan);
+    const currentCount = biz.professionals.length;
+    const response   = { plan: updated.plan };
+
+    if (newLimit !== Infinity && currentCount > newLimit) {
+      response.downgradeWarning = `El negocio tiene ${currentCount} profesionales activos pero el plan "${plan}" permite ${newLimit}. Los profesionales existentes no fueron eliminados; nuevas vinculaciones quedarán bloqueadas hasta regularizar.`;
+    }
+
+    console.log(`[admin] plan cambio: business=${req.params.id} oldPlan=${biz.plan} newPlan=${plan} by=${req.user.id}`);
+    res.json(response);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.patch('/professionals/:id/plan', async (req, res) => {
+  try {
+    const { plan } = req.body;
+    if (!VALID_PLANS.includes(plan)) return res.status(400).json({ error: 'Plan inválido' });
+
+    const pro = await prisma.professional.findUnique({ where: { id: req.params.id } });
+    if (!pro) return res.status(404).json({ error: 'Profesional no encontrado' });
+
+    const updated = await prisma.professional.update({ where: { id: req.params.id }, data: { plan } });
+    console.log(`[admin] plan cambio: professional=${req.params.id} oldPlan=${pro.plan} newPlan=${plan} by=${req.user.id}`);
+    res.json({ plan: updated.plan });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
   }
 });
 
