@@ -16,6 +16,14 @@ enum Role {
   ADMIN
 }
 
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  EXPIRED
+}
+
 enum JoinRequestStatus {
   PENDING
   APPROVED
@@ -87,6 +95,7 @@ model Business {
   services      Service[]
   joinRequests  JoinRequest[]
   reviews       Review[]
+  subscription  Subscription?
 }
 
 model Professional {
@@ -116,6 +125,7 @@ model Professional {
 
   business           Business?                  @relation(fields: [businessId], references: [id])
   user               User?                      @relation(fields: [userId], references: [id])
+  subscription       Subscription?
   schedules          Schedule[]
   homeSchedules      HomeSchedule[]
   scheduleExceptions ScheduleException[]
@@ -325,6 +335,26 @@ model FeedbackReport {
   page        String?
   userEmail   String?
   createdAt   DateTime @default(now())
+}
+
+model Subscription {
+  id                    String             @id @default(cuid())
+  status                SubscriptionStatus @default(TRIALING)
+  plan                  String
+  country               String
+  paymentGateway        String?
+  currentPeriodStart    DateTime
+  currentPeriodEnd      DateTime
+  trialEndsAt           DateTime?
+  cancelAtPeriodEnd     Boolean            @default(false)
+  gatewaySubscriptionId String?
+  businessId            String?            @unique
+  professionalId        String?            @unique
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+
+  business     Business?     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  professional Professional? @relation(fields: [professionalId], references: [id], onDelete: Cascade)
 }
 
 // Blocks a specific date (full day or time range)
