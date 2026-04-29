@@ -4,6 +4,12 @@ const crypto = require('crypto');
 const prisma = require('../config/database');
 const { getResend, FROM } = require('../config/email');
 
+function escHtml(str) {
+  return String(str ?? '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]{1,255}\.[^\s@]{2,}$/;
 
 async function register({ name, email, password, role, phone, country }) {
@@ -93,7 +99,7 @@ async function forgotPassword(email) {
       html: `
         <div style="font-family:sans-serif;max-width:480px;margin:0 auto">
           <h2 style="color:#7c3aed">Recuperar contraseña</h2>
-          <p>Hola <strong>${user.name}</strong>,</p>
+          <p>Hola <strong>${escHtml(user.name)}</strong>,</p>
           <p>Recibimos una solicitud para restablecer tu contraseña. Haz clic en el botón para continuar:</p>
           <a href="${resetUrl}" style="display:inline-block;background:#7c3aed;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0">
             Restablecer contraseña

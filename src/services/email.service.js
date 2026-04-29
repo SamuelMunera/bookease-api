@@ -2,6 +2,15 @@ const { getResend, FROM } = require('../config/email');
 
 const APP_URL = process.env.CLIENT_URL || 'https://bookease.vercel.app';
 
+function escHtml(str) {
+  return String(str ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function isReal(email) {
   return email && typeof email === 'string' && !email.endsWith('@bookease.internal');
 }
@@ -62,15 +71,15 @@ function confirmHtml({ to, name, service, date, startTime, endTime, proOrClient,
   const isClient = to === 'client';
   const heading  = isClient ? '¡Reserva confirmada!' : 'Nueva reserva agendada';
   const sub      = isClient
-    ? `Hola <strong style="color:#E0E0F0">${name}</strong>, tu cita quedó registrada.`
-    : `Hola <strong style="color:#E0E0F0">${name}</strong>, tienes una nueva cita.`;
+    ? `Hola <strong style="color:#E0E0F0">${escHtml(name)}</strong>, tu cita quedó registrada.`
+    : `Hola <strong style="color:#E0E0F0">${escHtml(name)}</strong>, tienes una nueva cita.`;
 
   const rows = [
-    [isClient ? 'Profesional' : 'Cliente', proOrClient],
-    ['Servicio',  service],
-    ['Fecha',     date],
-    ['Hora',      endTime ? `${startTime} – ${endTime}` : startTime],
-    ...(isHome && address ? [['Dirección', address]] : []),
+    [isClient ? 'Profesional' : 'Cliente', escHtml(proOrClient)],
+    ['Servicio',  escHtml(service)],
+    ['Fecha',     escHtml(date)],
+    ['Hora',      endTime ? `${escHtml(startTime)} – ${escHtml(endTime)}` : escHtml(startTime)],
+    ...(isHome && address ? [['Dirección', escHtml(address)]] : []),
     ['Modalidad', isHome ? '🏠 A domicilio' : '🏢 En local'],
   ];
 
@@ -94,14 +103,14 @@ function cancelHtml({ to, name, service, date, startTime, proOrClient }) {
   const isClient = to === 'client';
   const heading  = isClient ? 'Tu reserva fue cancelada' : 'Reserva cancelada';
   const sub      = isClient
-    ? `Hola <strong style="color:#E0E0F0">${name}</strong>, la siguiente cita ya no está activa.`
-    : `Hola <strong style="color:#E0E0F0">${name}</strong>, la siguiente cita fue cancelada.`;
+    ? `Hola <strong style="color:#E0E0F0">${escHtml(name)}</strong>, la siguiente cita ya no está activa.`
+    : `Hola <strong style="color:#E0E0F0">${escHtml(name)}</strong>, la siguiente cita fue cancelada.`;
 
   const rows = [
-    [isClient ? 'Profesional' : 'Cliente', proOrClient],
-    ['Servicio', service],
-    ['Fecha',    date],
-    ['Hora',     startTime],
+    [isClient ? 'Profesional' : 'Cliente', escHtml(proOrClient)],
+    ['Servicio', escHtml(service)],
+    ['Fecha',    escHtml(date)],
+    ['Hora',     escHtml(startTime)],
   ];
 
   return layout(`
@@ -122,11 +131,11 @@ function cancelHtml({ to, name, service, date, startTime, proOrClient }) {
 /* ── Reminder ─────────────────────────────────────────────── */
 function reminderHtml({ name, service, date, startTime, endTime, proOrClient, isHome, address }) {
   const rows = [
-    ['Profesional', proOrClient],
-    ['Servicio',    service],
-    ['Fecha',       date],
-    ['Hora',        endTime ? `${startTime} – ${endTime}` : startTime],
-    ...(isHome && address ? [['Dirección', address]] : []),
+    ['Profesional', escHtml(proOrClient)],
+    ['Servicio',    escHtml(service)],
+    ['Fecha',       escHtml(date)],
+    ['Hora',        endTime ? `${escHtml(startTime)} – ${escHtml(endTime)}` : escHtml(startTime)],
+    ...(isHome && address ? [['Dirección', escHtml(address)]] : []),
     ['Modalidad',   isHome ? '🏠 A domicilio' : '🏢 En local'],
   ];
 
@@ -137,7 +146,7 @@ function reminderHtml({ name, service, date, startTime, endTime, proOrClient, is
     <div class="body">
       <span class="badge badge-reminder">Recordatorio — mañana</span>
       <h1 class="title" style="margin-top:12px">Tu cita es mañana</h1>
-      <p class="sub">Hola <strong style="color:#E0E0F0">${name}</strong>, te recordamos que tienes una cita programada para mañana.</p>
+      <p class="sub">Hola <strong style="color:#E0E0F0">${escHtml(name)}</strong>, te recordamos que tienes una cita programada para mañana.</p>
       <table class="detail-table">${rows.map(([l,v]) => `<tr><td class="label">${l}</td><td class="value">${v}</td></tr>`).join('')}</table>
       <a href="${APP_URL}/my-bookings" class="cta">Ver mis reservas</a>
     </div>

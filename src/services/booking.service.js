@@ -190,7 +190,7 @@ async function cancelBookingAsOwner(id, ownerId) {
     include: { professional: { include: { business: { select: { ownerId: true } } } } },
   });
   if (!booking) throw new Error('Booking not found');
-  if (booking.professional.business.ownerId !== ownerId) throw new Error('Forbidden');
+  if (!booking.professional.business || booking.professional.business.ownerId !== ownerId) throw new Error('Forbidden');
   if (booking.status === 'CANCELLED') throw new Error('Already cancelled');
 
   const cancelled = await prisma.booking.update({
@@ -208,7 +208,7 @@ async function confirmBooking(id, ownerId) {
     include: { professional: { include: { business: { select: { ownerId: true } } } } },
   });
   if (!booking) throw new Error('Booking not found');
-  if (booking.professional.business.ownerId !== ownerId) throw new Error('Forbidden');
+  if (!booking.professional.business || booking.professional.business.ownerId !== ownerId) throw new Error('Forbidden');
   if (booking.status !== 'PENDING') throw new Error('Only PENDING bookings can be confirmed');
 
   const confirmed = await prisma.booking.update({
