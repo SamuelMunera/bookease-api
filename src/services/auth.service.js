@@ -142,9 +142,18 @@ async function googleAuth(accessToken, role = 'CLIENT') {
     }).then(r => r.json()),
   ]);
 
-  if (tokenInfo.error || (clientId && tokenInfo.aud !== clientId && tokenInfo.azp !== clientId)) {
+  if (tokenInfo.error) throw new Error('Token de Google inválido');
+
+  // If GOOGLE_CLIENT_ID is set, always enforce audience check to prevent token substitution attacks
+  if (clientId && tokenInfo.aud !== clientId && tokenInfo.azp !== clientId) {
     throw new Error('Token de Google inválido');
   }
+  if (!clientId) {
+    console.warn('[auth] GOOGLE_CLIENT_ID not set — audience check skipped. Set it in production.');
+  }
+
+  // Require verified email to prevent account linking with unverified addresses
+  if (!userInfo.email_verified) throw new Error('El email de Google no está verificado');
 
   const { sub: googleId, email, name } = userInfo;
   const VALID_ROLES = ['CLIENT', 'PROFESSIONAL', 'BUSINESS_OWNER'];

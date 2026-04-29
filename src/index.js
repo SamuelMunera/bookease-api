@@ -1,4 +1,11 @@
 if (require.main === module) require('dotenv').config();
+
+// Fail fast if critical secrets are missing
+if (!process.env.JWT_SECRET) {
+  console.error('FATAL: JWT_SECRET environment variable is not set. Refusing to start.');
+  process.exit(1);
+}
+
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
