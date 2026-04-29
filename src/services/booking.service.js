@@ -319,16 +319,38 @@ async function rescheduleBooking(id, clientId, { date, startTime }) {
   return rescheduled;
 }
 
+const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]{1,255}\.[^\s@]{2,}$/;
+const VALID_SOURCES = new Set(['ONLINE', 'MANUAL', 'WHATSAPP', 'CALL', 'PRESENCIAL']);
+
 // Manual booking — created by business owner or professional on behalf of a client
 async function createManualBooking({ creatorId, creatorRole, professionalId, serviceId, date, startTime, clientEmail, clientName, clientPhone, source }) {
   if (!professionalId || !serviceId || !date || !startTime)
     throw new Error('professionalId, serviceId, date y startTime son obligatorios');
   if (!clientEmail && !clientName)
     throw new Error('Proporciona el email o nombre del cliente');
+  if (clientEmail && !EMAIL_RE.test(clientEmail.trim()))
+    throw new Error('Email del cliente inválido');
+
+  // Authorization: creator must own or manage the professional
+  const pro = await prisma.professional.findUnique({
+    where: { id: professionalId },
+    select: { userId: true, business: { select: { ownerId: true } } },
+  });
+  if (!pro) throw new Error('Professional not found');
+  const isOwnPro  = pro.userId === creatorId;
+  const isBizOwner = pro.business?.ownerId === creatorId;
+  if (!isOwnPro && !isBizOwner) {
+    const err = new Error('Forbidden');
+    err.status = 403;
+    throw err;
+  }
+
+  const safeSource = source && VALID_SOURCES.has(source.toUpperCase()) ? source.toUpperCase() : 'MANUAL';
 
   // Resolve or create client
-  let client = clientEmail
-    ? await prisma.user.findUnique({ where: { email: clientEmail } })
+  const lookupEmail = clientEmail ? clientEmail.toLowerCase().trim() : null;
+  let client = lookupEmail
+    ? await prisma.user.findUnique({ where: { email: lookupEmail } })
     : null;
 
   if (!client) {
@@ -337,10 +359,11 @@ async function createManualBooking({ creatorId, creatorRole, professionalId, ser
     const tempPass = crypto.randomBytes(16).toString('hex');
     client = await prisma.user.create({
       data: {
-        name:     clientName || clientEmail.split('@')[0],
-        email:    clientEmail || `guest-${Date.now()}@bookease.internal`,
+        name:     clientName || (lookupEmail ? lookupEmail.split('@')[0] : 'Cliente'),
+        email:    lookupEmail || `guest-${crypto.randomBytes(8).toString('hex')}@bookease.internal`,
         password: await bcrypt.hash(tempPass, 12),
         role:     'CLIENT',
+        ...(clientPhone ? { phone: clientPhone } : {}),
       },
     });
   }
@@ -348,10 +371,10 @@ async function createManualBooking({ creatorId, creatorRole, professionalId, ser
   // Reuse core booking logic (validates schedule, conflicts, etc.)
   const booking = await createBooking({ clientId: client.id, professionalId, serviceId, date, startTime });
 
-  // Stamp source (booking is already created inside transaction — patch after)
+  // Stamp source and guest name
   return prisma.booking.update({
     where: { id: booking.id },
-    data: { source: source || 'MANUAL', guestName: clientName || null },
+    data: { source: safeSource, guestName: clientName || null },
     include: BOOKING_INCLUDE,
   });
 }

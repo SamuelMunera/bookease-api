@@ -36,7 +36,8 @@ async function register({ name, email, password, role, phone, country }) {
 }
 
 async function login({ email, password }) {
-  const user = await prisma.user.findUnique({ where: { email } });
+  const normalizedEmail = typeof email === 'string' ? email.toLowerCase().trim() : '';
+  const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
   if (!user) throw new Error('Invalid credentials');
 
   const valid = await bcrypt.compare(password, user.password);
@@ -67,7 +68,8 @@ async function changePassword(userId, { currentPassword, newPassword }) {
 }
 
 async function forgotPassword(email) {
-  const user = await prisma.user.findUnique({ where: { email } });
+  const normalizedEmail = typeof email === 'string' ? email.toLowerCase().trim() : '';
+  const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
   if (!user) return; // no revelar si existe
 
   await prisma.passwordResetToken.deleteMany({ where: { userId: user.id } });
