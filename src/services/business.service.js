@@ -8,6 +8,22 @@ const { businessVerifyEmail } = require('../utils/emailTemplates');
 
 const APP_URL = process.env.APP_URL || 'http://localhost:5173';
 
+// Safe fields for public-facing responses.
+// Excluded: joinCode, emailVerifyToken, emailVerifyExpiry, nameNorm, phoneNorm, addressNorm
+const PUBLIC_BUSINESS_SELECT = {
+  id: true, name: true, description: true, address: true, city: true,
+  phone: true, category: true, logoUrl: true, country: true, timezone: true,
+  state: true, zipCode: true, lat: true, lng: true,
+  emailVerified: true, cancelMinHours: true, createdAt: true,
+  ownerId: true, plan: true, showRevenueToProf: true,
+  professionals: {
+    select: { id: true, name: true, bio: true, specialty: true, avatarUrl: true, userId: true },
+  },
+  services: {
+    select: { id: true, name: true, description: true, duration: true, price: true },
+  },
+};
+
 const BUSINESS_EDITABLE = [
   'name', 'description', 'address', 'city', 'phone', 'category',
   'country', 'timezone', 'state', 'zipCode', 'cancelMinHours',
@@ -139,7 +155,7 @@ async function findAll({ category, city, lat, lng, radius } = {}) {
       ...(category && { category }),
       ...(city && !userLat && { city: { contains: city, mode: 'insensitive' } }),
     },
-    include: { professionals: true, services: true },
+    select: { ...PUBLIC_BUSINESS_SELECT, lat: true, lng: true },
   });
 
   if (!userLat || !userLng) return businesses;
@@ -167,14 +183,17 @@ async function findAll({ category, city, lat, lng, radius } = {}) {
 async function findById(id) {
   return prisma.business.findUnique({
     where: { id },
-    include: { professionals: true, services: true },
+    select: PUBLIC_BUSINESS_SELECT,
   });
 }
 
 async function getMyBusiness(ownerId) {
   return prisma.business.findFirst({
     where: { ownerId },
-    include: { professionals: true, services: true },
+    include: {
+      professionals: { select: { id: true, name: true, bio: true, specialty: true, avatarUrl: true, userId: true } },
+      services: true,
+    },
   });
 }
 
