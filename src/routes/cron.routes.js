@@ -3,12 +3,19 @@ const prisma  = require('../config/database');
 const { sendBookingReminder } = require('../services/email.service');
 const { tomorrowInTimezone } = require('../utils/timezone');
 const { parseLocalDate } = require('../services/slot.service');
+const subscriptionService = require('../services/subscription.service');
 
-router.get('/reminders', async (req, res) => {
+function cronAuth(req, res) {
   const secret = process.env.CRON_SECRET;
   if (!secret || req.headers['authorization'] !== `Bearer ${secret}`) {
-    return res.status(401).json({ error: 'Unauthorized' });
+    res.status(401).json({ error: 'Unauthorized' });
+    return false;
   }
+  return true;
+}
+
+router.get('/reminders', async (req, res) => {
+  if (!cronAuth(req, res)) return;
 
   // Collect unique "tomorrow" dates across all timezones we support
   const timezones = [
@@ -44,6 +51,22 @@ router.get('/reminders', async (req, res) => {
   }
 
   res.json({ ok: true, sent, failed, total: relevant.length });
+});
+
+// Subscription lifecycle — runs daily
+router.get('/subscriptions', async (req, res) => {
+  if (!cronAuth(req, res)) return;
+  try {
+    const [trials, cancelled, renewed] = await Promise.all([
+      subscriptionService.expireTrials(),
+      subscriptionService.cancelDue(),
+      subscriptionService.renewDue(),
+    ]);
+    res.json({ ok: true, ...trials, ...cancelled, ...renewed });
+  } catch (err) {
+    console.error('[cron] subscriptions:', err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;

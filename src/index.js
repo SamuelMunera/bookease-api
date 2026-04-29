@@ -91,6 +91,7 @@ app.get('/api/professionals/:professionalId/home-services', generalLimiter, home
 app.post('/api/bookings/home', generalLimiter, authenticate, homeServiceController.createHomeBooking);
 app.patch('/api/bookings/home/:id/cancel', generalLimiter, authenticate, homeServiceController.cancelHomeBooking);
 
+app.use('/api/subscriptions', generalLimiter, require('./routes/subscription.routes'));
 app.use('/api/cron', require('./routes/cron.routes'));
 app.get('/health', (_, res) => res.json({ status: 'ok' }));
 
