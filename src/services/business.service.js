@@ -14,15 +14,16 @@ const APP_URL = process.env.APP_URL || 'http://localhost:5173';
 // Excluded: joinCode, emailVerifyToken, emailVerifyExpiry, nameNorm, phoneNorm, addressNorm
 const PUBLIC_BUSINESS_SELECT = {
   id: true, name: true, description: true, address: true, city: true,
-  phone: true, category: true, logoUrl: true, country: true, timezone: true,
-  state: true, zipCode: true, lat: true, lng: true,
+  phone: true, category: true, logoUrl: true, coverUrl: true, accentColor: true,
+  country: true, timezone: true, state: true, zipCode: true, lat: true, lng: true,
   emailVerified: true, cancelMinHours: true, createdAt: true,
   ownerId: true, plan: true, paymentGateway: true, showRevenueToProf: true,
   professionals: {
     select: { id: true, name: true, bio: true, specialty: true, avatarUrl: true, userId: true },
   },
   services: {
-    select: { id: true, name: true, description: true, duration: true, price: true },
+    select: { id: true, name: true, description: true, duration: true, price: true, categoryId: true },
+    orderBy: { name: 'asc' },
   },
 };
 

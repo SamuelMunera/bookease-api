@@ -1,6 +1,6 @@
 const prisma = require('../config/database');
 
-const ALLOWED_FIELDS = ['name', 'description', 'duration', 'price'];
+const ALLOWED_FIELDS = ['name', 'description', 'duration', 'price', 'categoryId'];
 
 async function create(businessId, data) {
   const clean = Object.fromEntries(Object.entries(data).filter(([k]) => ALLOWED_FIELDS.includes(k)));
@@ -8,7 +8,11 @@ async function create(businessId, data) {
 }
 
 async function findByBusiness(businessId) {
-  return prisma.service.findMany({ where: { businessId } });
+  return prisma.service.findMany({
+    where: { businessId },
+    include: { category: { select: { id: true, name: true } } },
+    orderBy: { name: 'asc' },
+  });
 }
 
 async function update(id, ownerId, data) {

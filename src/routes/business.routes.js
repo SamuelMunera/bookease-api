@@ -1,5 +1,6 @@
 const router = require('express').Router();
 const businessController     = require('../controllers/business.controller');
+const extrasController       = require('../controllers/businessExtras.controller');
 const bookingController      = require('../controllers/booking.controller');
 const joinRequestController  = require('../controllers/joinRequest.controller');
 const revenueController      = require('../controllers/revenue.controller');
@@ -49,11 +50,38 @@ router.get('/me/gateway', authenticate, requireRole('BUSINESS_OWNER'), async (re
 });
 
 router.post('/check-duplicate', authenticate, requireRole('BUSINESS_OWNER'), businessController.checkDuplicate);
+
+// Gallery
+router.get('/me/gallery',                        authenticate, requireRole('BUSINESS_OWNER'), extrasController.getMyGallery);
+router.post('/me/gallery',                       authenticate, requireRole('BUSINESS_OWNER'), uploadLimiter, upload.single('file'), extrasController.uploadGalleryPhoto);
+router.patch('/me/gallery/:photoId',             authenticate, requireRole('BUSINESS_OWNER'), extrasController.updateGalleryPhoto);
+router.delete('/me/gallery/:photoId',            authenticate, requireRole('BUSINESS_OWNER'), extrasController.deleteGalleryPhoto);
+
+// Cover + customization
+router.post('/me/cover',                         authenticate, requireRole('BUSINESS_OWNER'), uploadLimiter, upload.single('file'), extrasController.uploadCover);
+router.patch('/me/customization',                authenticate, requireRole('BUSINESS_OWNER'), extrasController.updateCustomization);
+
+// Service categories
+router.get('/me/service-categories',             authenticate, requireRole('BUSINESS_OWNER'), extrasController.getMyServiceCategories);
+router.post('/me/service-categories',            authenticate, requireRole('BUSINESS_OWNER'), extrasController.createServiceCategory);
+router.patch('/me/service-categories/:catId',    authenticate, requireRole('BUSINESS_OWNER'), extrasController.updateServiceCategory);
+router.delete('/me/service-categories/:catId',   authenticate, requireRole('BUSINESS_OWNER'), extrasController.deleteServiceCategory);
+
+// Business hours
+router.get('/me/hours',                          authenticate, requireRole('BUSINESS_OWNER'), extrasController.getMyHours);
+router.put('/me/hours',                          authenticate, requireRole('BUSINESS_OWNER'), extrasController.setMyHours);
+
 router.get('/', businessController.findAll);
 router.get('/:id', businessController.findById);
 router.post('/', authenticate, requireRole('BUSINESS_OWNER'), businessController.create);
 router.put('/:id', authenticate, requireRole('BUSINESS_OWNER'), businessController.update);
 router.delete('/:id', authenticate, requireRole('BUSINESS_OWNER'), businessController.remove);
+
+// Public detail extras
+router.get('/:id/gallery',            extrasController.getGallery);
+router.get('/:id/service-categories', extrasController.getServiceCategories);
+router.get('/:id/hours',              extrasController.getHours);
+
 router.get('/:id/bookings',        authenticate, requireRole('BUSINESS_OWNER'), bookingController.businessBookings);
 router.post('/:id/bookings/manual', authenticate, requireRole('BUSINESS_OWNER'), bookingController.manualCreate);
 

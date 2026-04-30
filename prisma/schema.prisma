@@ -73,6 +73,8 @@ model Business {
   updatedAt   DateTime         @updatedAt
 
   logoUrl            String?
+  coverUrl           String?
+  accentColor        String?
   joinCode           String?  @unique
   showRevenueToProf  Boolean  @default(false)
   cancelMinHours     Int      @default(0)
@@ -90,12 +92,15 @@ model Business {
   nameNorm           String?
   phoneNorm          String?
   addressNorm        String?
-  owner         User           @relation(fields: [ownerId], references: [id])
-  professionals Professional[]
-  services      Service[]
-  joinRequests  JoinRequest[]
-  reviews       Review[]
-  subscription  Subscription?
+  owner             User              @relation(fields: [ownerId], references: [id])
+  professionals     Professional[]
+  services          Service[]
+  serviceCategories ServiceCategory[]
+  gallery           BusinessGallery[]
+  hours             BusinessHours[]
+  joinRequests      JoinRequest[]
+  reviews           Review[]
+  subscription      Subscription?
 }
 
 model Professional {
@@ -184,13 +189,54 @@ model Service {
   duration    Int
   price       Decimal  @db.Decimal(10, 2)
   businessId  String
+  categoryId  String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  business       Business                    @relation(fields: [businessId], references: [id])
-  bookings       Booking[]
-  professionals  Professional[]
-  serviceConfigs ProfessionalServiceConfig[]
+  business         Business                    @relation(fields: [businessId], references: [id])
+  category         ServiceCategory?            @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  bookings         Booking[]
+  professionals    Professional[]
+  serviceConfigs   ProfessionalServiceConfig[]
+}
+
+model ServiceCategory {
+  id         String   @id @default(cuid())
+  businessId String
+  name       String
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  business Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  services Service[]
+}
+
+model BusinessGallery {
+  id         String   @id @default(cuid())
+  businessId String
+  url        String
+  caption    String?
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+}
+
+// dayOfWeek: 0=Sunday … 6=Saturday
+model BusinessHours {
+  id         String   @id @default(cuid())
+  businessId String
+  dayOfWeek  Int
+  openTime   String
+  closeTime  String
+  isOpen     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, dayOfWeek])
 }
 
 // Weekly recurring availability per professional

@@ -12,7 +12,7 @@ async function create(req, res) {
     if (Number(price) < 0) {
       return res.status(400).json({ error: 'price must be >= 0' });
     }
-    const service = await serviceService.create(req.params.businessId, { name, duration, price, description: req.body.description });
+    const service = await serviceService.create(req.params.businessId, { name, duration, price, description: req.body.description, categoryId: req.body.categoryId || null });
     res.status(201).json(service);
   } catch (err) {
     res.status(400).json({ error: err.message });
