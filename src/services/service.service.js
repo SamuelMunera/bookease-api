@@ -23,7 +23,11 @@ async function update(id, ownerId, data) {
   if (!service) throw new Error('Service not found');
   if (service.business.ownerId !== ownerId) throw new Error('Forbidden');
   const clean = Object.fromEntries(Object.entries(data).filter(([k]) => ALLOWED_FIELDS.includes(k)));
-  return prisma.service.update({ where: { id }, data: clean });
+  return prisma.service.update({
+    where: { id },
+    data: clean,
+    include: { category: { select: { id: true, name: true } } },
+  });
 }
 
 async function remove(id, ownerId) {
