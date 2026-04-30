@@ -45,8 +45,9 @@ async function uploadGalleryPhoto(req, res) {
       data: { businessId: biz.id, url, caption: req.body.caption || null, sortOrder: count },
     });
     res.status(201).json(item);
-  } catch {
-    res.status(500).json({ error: 'Internal server error' });
+  } catch (err) {
+    console.error('[uploadGalleryPhoto]', err?.message || err);
+    res.status(500).json({ error: err?.message?.includes('Storage not configured') ? 'Storage no configurado: agrega SUPABASE_SERVICE_KEY al .env' : 'Internal server error' });
   }
 }
 
@@ -91,8 +92,9 @@ async function uploadCover(req, res) {
     if (!biz) return res.status(404).json({ error: 'Negocio no encontrado' });
     const updated = await prisma.business.update({ where: { id: biz.id }, data: { coverUrl: url } });
     res.json({ url, coverUrl: updated.coverUrl });
-  } catch {
-    res.status(500).json({ error: 'Internal server error' });
+  } catch (err) {
+    console.error('[uploadCover]', err?.message || err);
+    res.status(500).json({ error: err?.message?.includes('Storage not configured') ? 'Storage no configurado: agrega SUPABASE_SERVICE_KEY al .env' : 'Internal server error' });
   }
 }
 
@@ -112,7 +114,8 @@ async function updateCustomization(req, res) {
       data: { accentColor: accentColor || null },
     });
     res.json({ accentColor: updated.accentColor });
-  } catch {
+  } catch (err) {
+    console.error('[updateCustomization]', err?.message || err);
     res.status(500).json({ error: 'Internal server error' });
   }
 }
