@@ -87,6 +87,7 @@ model Business {
   emailVerified      Boolean   @default(false)
   plan               String   @default("team")
   paymentGateway     String?
+  stripeCustomerId   String?
   emailVerifyToken   String?   @unique
   emailVerifyExpiry  DateTime?
   nameNorm           String?
@@ -119,9 +120,10 @@ model Professional {
   timezone       String   @default("America/Bogota")
   state          String?
   zipCode        String?
-  plan           String   @default("solo")
-  createdAt      DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  plan             String   @default("solo")
+  stripeCustomerId String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   offersHomeService    Boolean  @default(false)
   homeServiceArea      String?
@@ -392,9 +394,9 @@ model Subscription {
   currentPeriodStart    DateTime
   currentPeriodEnd      DateTime
   trialEndsAt           DateTime?
-  cancelAtPeriodEnd     Boolean            @default(false)
-  gatewaySubscriptionId String?
-  businessId            String?            @unique
+  cancelAtPeriodEnd    Boolean            @default(false)
+  stripeSubscriptionId String?
+  businessId           String?            @unique
   professionalId        String?            @unique
   createdAt             DateTime           @default(now())
   updatedAt             DateTime           @updatedAt

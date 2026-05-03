@@ -1,5 +1,4 @@
 const prisma = require('../config/database');
-const { getDefaultGateway } = require('../config/gateways');
 
 const TRIAL_DAYS = 14;
 const PERIOD_DAYS = 30;
@@ -18,13 +17,12 @@ function trialEndDate(fromDate = new Date()) {
 }
 
 async function createForBusiness(businessId, plan, country) {
-  const paymentGateway = getDefaultGateway(country);
   return prisma.subscription.create({
     data: {
       businessId,
       plan,
       country,
-      paymentGateway,
+      paymentGateway: 'STRIPE',
       status: 'TRIALING',
       trialEndsAt: trialEndDate(),
       ...periodDates(),
@@ -33,13 +31,12 @@ async function createForBusiness(businessId, plan, country) {
 }
 
 async function createForProfessional(professionalId, plan, country) {
-  const paymentGateway = getDefaultGateway(country);
   return prisma.subscription.create({
     data: {
       professionalId,
       plan,
       country,
-      paymentGateway,
+      paymentGateway: 'STRIPE',
       status: 'TRIALING',
       trialEndsAt: trialEndDate(),
       ...periodDates(),
@@ -76,7 +73,7 @@ async function reactivate(subscriptionId) {
   });
 }
 
-// Called by cron: advance period for subscriptions due for renewal
+// Called by cron: advance period for subscriptions due for renewal (legacy only — Stripe subs handled by webhooks)
 async function renewDue() {
   const now = new Date();
   const due = await prisma.subscription.findMany({
@@ -84,6 +81,7 @@ async function renewDue() {
       status: { in: ['ACTIVE', 'PAST_DUE'] },
       currentPeriodEnd: { lte: now },
       cancelAtPeriodEnd: false,
+      stripeSubscriptionId: null,
     },
   });
 
@@ -115,20 +113,21 @@ async function cancelDue() {
   return { cancelled: count };
 }
 
-// Called by cron: expire TRIALING subscriptions whose trial ended
+// Called by cron: expire TRIALING subscriptions whose trial ended (legacy only — Stripe subs handled by webhooks)
 async function expireTrials() {
   const now = new Date();
   const { count } = await prisma.subscription.updateMany({
     where: {
       status: 'TRIALING',
       trialEndsAt: { lte: now },
+      stripeSubscriptionId: null,
     },
     data: { status: 'EXPIRED' },
   });
   return { expired: count };
 }
 
-// Called by cron: mark ACTIVE subscriptions past period as PAST_DUE
+// Called by cron: mark ACTIVE subscriptions past period as PAST_DUE (legacy only — Stripe subs handled by webhooks)
 async function markPastDue() {
   const now = new Date();
   const { count } = await prisma.subscription.updateMany({
@@ -136,6 +135,7 @@ async function markPastDue() {
       status: 'ACTIVE',
       currentPeriodEnd: { lte: now },
       cancelAtPeriodEnd: false,
+      stripeSubscriptionId: null,
     },
     data: { status: 'PAST_DUE' },
   });

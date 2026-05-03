@@ -5,7 +5,6 @@ const { normalizeName, normalizePhone, normalizeAddress } = require('../utils/no
 const { validateAddress } = require('../utils/addressValidation');
 const { getResend, FROM } = require('../config/email');
 const { businessVerifyEmail } = require('../utils/emailTemplates');
-const { getDefaultGateway } = require('../config/gateways');
 const subscriptionService = require('./subscription.service');
 
 const APP_URL = process.env.APP_URL || 'http://localhost:5173';
@@ -88,9 +87,8 @@ async function create(ownerId, data) {
     }
   }
 
-  const paymentGateway = getDefaultGateway(clean.country || 'CO');
   const business = await prisma.business.create({
-    data: { ...clean, ownerId, nameNorm, phoneNorm, addressNorm, paymentGateway },
+    data: { ...clean, ownerId, nameNorm, phoneNorm, addressNorm, paymentGateway: 'STRIPE' },
   });
 
   geocodeAddress(business.address, business.city).then(coords => {
@@ -232,7 +230,7 @@ async function updateProfile(ownerId, data) {
   if (clean.address) norms.addressNorm = normalizeAddress(clean.address);
 
   if (clean.country) {
-    clean.paymentGateway = getDefaultGateway(clean.country);
+    clean.paymentGateway = 'STRIPE';
   }
 
   const updated = await prisma.business.update({ where: { id: business.id }, data: { ...clean, ...norms } });
