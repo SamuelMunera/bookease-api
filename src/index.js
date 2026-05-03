@@ -58,6 +58,9 @@ app.use(cors({
   maxAge: 3600,
 }));
 
+// Webhook needs raw body — must be before express.json()
+app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));
+
 app.use(express.json({ limit: '50kb' }));
 
 // Rate limiters
@@ -92,6 +95,7 @@ app.post('/api/bookings/home', generalLimiter, authenticate, homeServiceControll
 app.patch('/api/bookings/home/:id/cancel', generalLimiter, authenticate, homeServiceController.cancelHomeBooking);
 
 app.use('/api/subscriptions', generalLimiter, require('./routes/subscription.routes'));
+app.use('/api/stripe', generalLimiter, require('./routes/stripe.routes'));
 app.use('/api/cron', require('./routes/cron.routes'));
 app.get('/health', (_, res) => res.json({ status: 'ok' }));
 
