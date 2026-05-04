@@ -2,8 +2,11 @@ const router = require('express').Router();
 const prisma = require('../config/database');
 const { authenticate } = require('../middleware/auth');
 const stripeService = require('../services/stripe.service');
+const { getPlanById } = require('../config/plans');
 
-const VALID_PLANS = ['solo', 'team', 'studio'];
+const BUSINESS_PLANS     = ['team', 'studio'];
+const PROFESSIONAL_PLANS = ['solo'];
+const VALID_PLANS        = [...BUSINESS_PLANS, ...PROFESSIONAL_PLANS];
 
 async function resolveEntity(user) {
   if (user.role === 'BUSINESS_OWNER') {
@@ -25,6 +28,14 @@ router.post('/checkout-session', authenticate, async (req, res) => {
   try {
     const { plan, country = 'CO' } = req.body;
     if (!VALID_PLANS.includes(plan)) return res.status(400).json({ error: 'Plan inválido' });
+
+    // Enforce plan ↔ role compatibility
+    if (PROFESSIONAL_PLANS.includes(plan) && req.user.role !== 'PROFESSIONAL') {
+      return res.status(400).json({ error: 'El plan Independiente es solo para profesionales. Si eres dueño de negocio elige Equipo o Estudio.' });
+    }
+    if (BUSINESS_PLANS.includes(plan) && req.user.role !== 'BUSINESS_OWNER') {
+      return res.status(400).json({ error: 'Este plan es para negocios. Si eres profesional independiente elige el plan Independiente.' });
+    }
 
     const { entityType, entityId } = await resolveEntity(req.user);
     const url = await stripeService.createCheckoutSession({

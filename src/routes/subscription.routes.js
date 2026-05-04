@@ -4,7 +4,8 @@ const { authenticate, requireRole } = require('../middleware/auth');
 const subscriptionService = require('../services/subscription.service');
 const { getPlanLimit } = require('../config/plans');
 
-const VALID_PLANS = ['solo', 'team', 'studio', 'enterprise'];
+const VALID_BUSINESS_PLANS = ['team', 'studio', 'enterprise'];
+const VALID_PRO_PLANS     = ['solo'];
 
 // ── Business owner ────────────────────────────────────────────────────────────
 
@@ -21,7 +22,7 @@ router.get('/business/me', authenticate, requireRole('BUSINESS_OWNER'), async (r
 router.patch('/business/me/plan', authenticate, requireRole('BUSINESS_OWNER'), async (req, res) => {
   try {
     const { plan } = req.body;
-    if (!VALID_PLANS.includes(plan)) return res.status(400).json({ error: 'Plan inválido' });
+    if (!VALID_BUSINESS_PLANS.includes(plan)) return res.status(400).json({ error: 'Plan inválido para negocio. Elige Equipo, Estudio o Empresarial.' });
 
     const biz = await prisma.business.findFirst({
       where: { ownerId: req.user.id },
