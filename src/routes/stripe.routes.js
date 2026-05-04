@@ -35,7 +35,8 @@ router.post('/checkout-session', authenticate, async (req, res) => {
 
     res.json({ url });
   } catch (err) {
-    const status = err.status || 400;
+    console.error('[stripe/checkout-session]', err.message, err.type, err.code);
+    const status = err.status || err.statusCode || 400;
     res.status(status).json({ error: err.message });
   }
 });
