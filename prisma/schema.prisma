@@ -24,6 +24,12 @@ enum SubscriptionStatus {
   EXPIRED
 }
 
+enum BusinessStatus {
+  INACTIVE
+  ACTIVE
+  SUSPENDED
+}
+
 enum JoinRequestStatus {
   PENDING
   APPROVED
@@ -84,6 +90,7 @@ model Business {
   zipCode            String?
   lat                Float?
   lng                Float?
+  status             BusinessStatus @default(INACTIVE)
   emailVerified      Boolean   @default(false)
   plan               String   @default("team")
   paymentGateway     String?

@@ -139,11 +139,10 @@ async function onCheckoutCompleted(session) {
     });
   }
 
-  const planUpdate = { plan };
   if (entityType === 'business') {
-    await prisma.business.update({ where: { id: entityId }, data: planUpdate });
+    await prisma.business.update({ where: { id: entityId }, data: { plan, status: 'ACTIVE' } });
   } else {
-    await prisma.professional.update({ where: { id: entityId }, data: planUpdate });
+    await prisma.professional.update({ where: { id: entityId }, data: { plan } });
   }
 }
 
@@ -171,21 +170,38 @@ async function onSubscriptionUpdated(stripeSub) {
     },
   });
 
-  if (plan !== sub.plan) {
-    if (sub.businessId)      await prisma.business.update({ where: { id: sub.businessId }, data: { plan } });
-    if (sub.professionalId)  await prisma.professional.update({ where: { id: sub.professionalId }, data: { plan } });
+  const bizStatus = ['ACTIVE', 'TRIALING'].includes(status) ? 'ACTIVE' : 'SUSPENDED';
+  if (sub.businessId) {
+    await prisma.business.update({
+      where: { id: sub.businessId },
+      data: { status: bizStatus, ...(plan !== sub.plan && { plan }) },
+    });
+  }
+  if (sub.professionalId && plan !== sub.plan) {
+    await prisma.professional.update({ where: { id: sub.professionalId }, data: { plan } });
   }
 }
 
 async function onSubscriptionDeleted(stripeSub) {
+  const sub = await prisma.subscription.findFirst({
+    where: { stripeSubscriptionId: stripeSub.id },
+    select: { businessId: true },
+  });
   await prisma.subscription.updateMany({
     where: { stripeSubscriptionId: stripeSub.id },
     data:  { status: 'CANCELLED', cancelAtPeriodEnd: false },
   });
+  if (sub?.businessId) {
+    await prisma.business.update({ where: { id: sub.businessId }, data: { status: 'SUSPENDED' } });
+  }
 }
 
 async function onInvoicePaid(invoice) {
   if (!invoice.subscription) return;
+  const sub = await prisma.subscription.findFirst({
+    where: { stripeSubscriptionId: invoice.subscription },
+    select: { businessId: true },
+  });
   await prisma.subscription.updateMany({
     where: { stripeSubscriptionId: invoice.subscription },
     data: {
@@ -194,14 +210,24 @@ async function onInvoicePaid(invoice) {
       currentPeriodEnd:   new Date(invoice.period_end   * 1000),
     },
   });
+  if (sub?.businessId) {
+    await prisma.business.update({ where: { id: sub.businessId }, data: { status: 'ACTIVE' } });
+  }
 }
 
 async function onInvoicePaymentFailed(invoice) {
   if (!invoice.subscription) return;
+  const sub = await prisma.subscription.findFirst({
+    where: { stripeSubscriptionId: invoice.subscription },
+    select: { businessId: true },
+  });
   await prisma.subscription.updateMany({
     where: { stripeSubscriptionId: invoice.subscription },
     data:  { status: 'PAST_DUE' },
   });
+  if (sub?.businessId) {
+    await prisma.business.update({ where: { id: sub.businessId }, data: { status: 'SUSPENDED' } });
+  }
 }
 
 function stripeStatusToLocal(stripeStatus) {

@@ -156,6 +156,7 @@ async function findAll({ category, city, lat, lng, radius } = {}) {
 
   const businesses = await prisma.business.findMany({
     where: {
+      status: 'ACTIVE',
       ...(category && { category }),
       ...(city && !userLat && { city: { contains: city, mode: 'insensitive' } }),
     },
@@ -185,8 +186,8 @@ async function findAll({ category, city, lat, lng, radius } = {}) {
 }
 
 async function findById(id) {
-  return prisma.business.findUnique({
-    where: { id },
+  return prisma.business.findFirst({
+    where: { id, status: 'ACTIVE' },
     select: PUBLIC_BUSINESS_SELECT,
   });
 }
