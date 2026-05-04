@@ -149,16 +149,44 @@ async function checkDuplicate({ name, phone, address }) {
   return { isDuplicate: !!candidate };
 }
 
-async function findAll({ category, city, lat, lng, radius } = {}) {
+// Validates HH:MM format
+function isValidTime(t) {
+  return typeof t === 'string' && /^\d{2}:\d{2}$/.test(t);
+}
+
+async function findAll({ category, city, lat, lng, radius, time } = {}) {
   const userLat = lat ? parseFloat(lat) : null;
   const userLng = lng ? parseFloat(lng) : null;
   const maxRadius = radius ? parseFloat(radius) : null;
+  const validTime = isValidTime(time) ? time : null;
 
   const businesses = await prisma.business.findMany({
     where: {
       status: 'ACTIVE',
       ...(category && { category }),
       ...(city && !userLat && { city: { contains: city, mode: 'insensitive' } }),
+      // Filter by time: business must have at least one professional whose schedule covers the time
+      ...(validTime && {
+        professionals: {
+          some: {
+            schedules: {
+              some: {
+                isActive: true,
+                OR: [
+                  // Fulltime or first block of part_time covers the time
+                  { startTime: { lte: validTime }, endTime: { gt: validTime } },
+                  // Second block of part_time covers the time
+                  {
+                    scheduleType: 'part_time',
+                    secondStartTime: { lte: validTime },
+                    secondEndTime:   { gt: validTime },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      }),
     },
     select: { ...PUBLIC_BUSINESS_SELECT, lat: true, lng: true },
   });
