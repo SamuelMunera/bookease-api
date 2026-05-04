@@ -38,13 +38,14 @@ router.post('/checkout-session', authenticate, async (req, res) => {
     }
 
     const { entityType, entityId } = await resolveEntity(req.user);
-    const url = await stripeService.createCheckoutSession({
+    const result = await stripeService.createCheckoutSession({
       plan, country, entityType, entityId,
       email: req.user.email,
       name:  req.user.name,
     });
 
-    res.json({ url });
+    // result is { url } for new subscriptions or { updated, plan } for plan changes
+    res.json(result);
   } catch (err) {
     console.error('[stripe/checkout-session]', err.message, err.type, err.code);
     const status = err.status || err.statusCode || 400;

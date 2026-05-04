@@ -24,13 +24,14 @@ async function createCheckoutSession({ plan, country, entityType, entityId, emai
 
   const customerId = await getOrCreateCustomer(entityType, entityId, email, name);
 
-  // Check if customer already has an active subscription — prevent duplicates.
+  // If subscription already exists in Stripe, update it instead of creating a new one.
   const existing = await prisma.subscription.findFirst({
     where: entityType === 'business' ? { businessId: entityId } : { professionalId: entityId },
-    select: { stripeSubscriptionId: true, status: true },
+    select: { stripeSubscriptionId: true, status: true, plan: true },
   });
-  if (existing?.stripeSubscriptionId && ['ACTIVE', 'TRIALING'].includes(existing.status)) {
-    throw new Error('Ya tienes una suscripción activa. Usa el portal de facturación para cambiar de plan.');
+  if (existing?.stripeSubscriptionId && !['CANCELLED', 'EXPIRED'].includes(existing.status)) {
+    if (existing.plan === plan) throw new Error('Ya estás suscrito a este plan.');
+    return changePlanOnStripe(existing.stripeSubscriptionId, priceId, plan);
   }
 
   const session = await stripe.checkout.sessions.create({
@@ -48,6 +49,21 @@ async function createCheckoutSession({ plan, country, entityType, entityId, emai
   });
 
   return session.url;
+}
+
+// Updates an existing Stripe subscription to a new price (upgrade/downgrade).
+// Returns { updated: true } — DB is synced via customer.subscription.updated webhook.
+async function changePlanOnStripe(stripeSubscriptionId, newPriceId, newPlan) {
+  const stripeSub = await stripe.subscriptions.retrieve(stripeSubscriptionId);
+  const itemId = stripeSub.items.data[0]?.id;
+  if (!itemId) throw new Error('No se encontró el item de la suscripción en Stripe.');
+
+  await stripe.subscriptions.update(stripeSubscriptionId, {
+    items: [{ id: itemId, price: newPriceId }],
+    proration_behavior: 'create_prorations',
+  });
+
+  return { updated: true, plan: newPlan };
 }
 
 async function createPortalSession(entityType, entityId) {
@@ -243,4 +259,4 @@ function stripeStatusToLocal(stripeStatus) {
   return map[stripeStatus] || 'ACTIVE';
 }
 
-module.exports = { createCheckoutSession, createPortalSession, handleWebhook };
+module.exports = { createCheckoutSession, changePlanOnStripe, createPortalSession, handleWebhook };
