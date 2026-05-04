@@ -1,8 +1,17 @@
 const Stripe = require('stripe');
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: '2024-04-10',
-});
+// Lazy init so the app boots even without Stripe keys (routes will return 503 on call)
+let _stripe = null;
+function getStripe() {
+  if (!_stripe) {
+    if (!process.env.STRIPE_SECRET_KEY) throw new Error('STRIPE_SECRET_KEY no está configurado');
+    _stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2024-04-10' });
+  }
+  return _stripe;
+}
+
+// Proxy object so existing code using `stripe.xxx` still works
+const stripe = new Proxy({}, { get: (_, prop) => getStripe()[prop] });
 
 // One price per plan per currency. Create these in the Stripe dashboard and set the env vars.
 const STRIPE_PRICES = {
