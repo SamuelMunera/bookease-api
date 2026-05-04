@@ -13,6 +13,15 @@ function overlaps(aStart, aEnd, bStart, bEnd) {
   return aStart < bEnd && aEnd > bStart;
 }
 
+// Returns one block for fulltime, two blocks for part_time
+function buildBlocks(sched) {
+  const blocks = [{ start: toMinutes(sched.startTime), end: toMinutes(sched.endTime) }];
+  if (sched.scheduleType === 'part_time' && sched.secondStartTime && sched.secondEndTime) {
+    blocks.push({ start: toMinutes(sched.secondStartTime), end: toMinutes(sched.secondEndTime) });
+  }
+  return blocks;
+}
+
 // Parses "YYYY-MM-DD" as UTC midnight so it matches PostgreSQL DATE storage
 function parseLocalDate(dateStr) {
   const [y, m, d] = dateStr.split('-').map(Number);
@@ -53,18 +62,16 @@ async function getAvailableSlots(professionalId, serviceId, dateStr) {
     where: { professionalId_weekStart_dayOfWeek: { professionalId, weekStart, dayOfWeek } },
   });
 
-  let dayStart, dayEnd;
+  let availBlocks; // [{ start, end }] — one for fulltime, two for part_time
   if (override) {
     if (!override.isActive) return [];
-    dayStart = toMinutes(override.startTime);
-    dayEnd   = toMinutes(override.endTime);
+    availBlocks = buildBlocks(override);
   } else {
     const schedule = await prisma.schedule.findUnique({
       where: { professionalId_dayOfWeek: { professionalId, dayOfWeek } },
     });
     if (!schedule || !schedule.isActive) return [];
-    dayStart = toMinutes(schedule.startTime);
-    dayEnd   = toMinutes(schedule.endTime);
+    availBlocks = buildBlocks(schedule);
   }
 
   // 4. Exceptions
@@ -88,15 +95,15 @@ async function getAvailableSlots(professionalId, serviceId, dateStr) {
 
   const blocked = [...exceptionBlocks, ...bookingBlocks];
 
-  // 6. Generate slots
-  // step = effectiveDuration + bufferTime so consecutive free slots already include the gap
+  // 6. Generate slots across all availability blocks
   const step = effectiveDuration + bufferTime;
   const slots = [];
-  for (let start = dayStart; start + effectiveDuration <= dayEnd; start += step) {
-    const end = start + effectiveDuration;
-    // Block if the slot (including trailing buffer) overlaps any blocked region
-    if (!blocked.some((b) => overlaps(start, end, b.start, b.end))) {
-      slots.push({ startTime: toTime(start), endTime: toTime(end) });
+  for (const { start: blockStart, end: blockEnd } of availBlocks) {
+    for (let start = blockStart; start + effectiveDuration <= blockEnd; start += step) {
+      const end = start + effectiveDuration;
+      if (!blocked.some((b) => overlaps(start, end, b.start, b.end))) {
+        slots.push({ startTime: toTime(start), endTime: toTime(end) });
+      }
     }
   }
 

@@ -115,18 +115,32 @@ async function getMySchedule(userId) {
   });
 }
 
+function toMin(t) { const [h, m] = t.split(':').map(Number); return h * 60 + m; }
+
+function validateDay({ scheduleType = 'fulltime', startTime, endTime, secondStartTime, secondEndTime, isActive }) {
+  if (!isActive) return;
+  if (!startTime || !endTime) throw new Error('startTime y endTime son requeridos');
+  if (toMin(startTime) >= toMin(endTime)) throw new Error(`Bloque 1: inicio debe ser anterior al fin (${startTime} >= ${endTime})`);
+  if (scheduleType === 'part_time') {
+    if (!secondStartTime || !secondEndTime) throw new Error('Turno partido requiere ambos bloques de horario');
+    if (toMin(secondStartTime) >= toMin(secondEndTime)) throw new Error('Bloque 2: inicio debe ser anterior al fin');
+    if (toMin(secondStartTime) < toMin(endTime)) throw new Error('El segundo bloque debe comenzar después de que termine el primero (sin solapamiento)');
+  }
+}
+
 async function setMySchedule(userId, days) {
-  // days: [{ dayOfWeek, startTime, endTime, isActive }]
   const prof = await prisma.professional.findUnique({ where: { userId } });
   if (!prof) throw new Error('Professional profile not found');
+  days.forEach(validateDay);
   const results = await Promise.all(
-    days.map(({ dayOfWeek, startTime, endTime, isActive }) =>
-      prisma.schedule.upsert({
+    days.map(({ dayOfWeek, startTime, endTime, isActive, scheduleType = 'fulltime', secondStartTime = null, secondEndTime = null }) => {
+      const data = { startTime, endTime, isActive: isActive ?? true, scheduleType, secondStartTime, secondEndTime };
+      return prisma.schedule.upsert({
         where: { professionalId_dayOfWeek: { professionalId: prof.id, dayOfWeek } },
-        update: { startTime, endTime, isActive: isActive ?? true },
-        create: { professionalId: prof.id, dayOfWeek, startTime, endTime, isActive: isActive ?? true },
-      })
-    )
+        update: data,
+        create: { professionalId: prof.id, dayOfWeek, ...data },
+      });
+    })
   );
   return results;
 }
@@ -147,22 +161,36 @@ async function getWeekSchedule(userId, weekStart) {
   return [0,1,2,3,4,5,6].map(dow => {
     const ov  = overrides.find(o => o.dayOfWeek === dow);
     const rec = recurring.find(r => r.dayOfWeek === dow);
-    if (ov) return { dayOfWeek: dow, startTime: ov.startTime, endTime: ov.endTime, isActive: ov.isActive, isOverride: true };
-    return { dayOfWeek: dow, startTime: rec?.startTime ?? '09:00', endTime: rec?.endTime ?? '18:00', isActive: rec?.isActive ?? false, isOverride: false };
+    if (ov) return {
+      dayOfWeek: dow, startTime: ov.startTime, endTime: ov.endTime,
+      isActive: ov.isActive, isOverride: true,
+      scheduleType: ov.scheduleType ?? 'fulltime',
+      secondStartTime: ov.secondStartTime ?? null,
+      secondEndTime:   ov.secondEndTime   ?? null,
+    };
+    return {
+      dayOfWeek: dow, startTime: rec?.startTime ?? '09:00', endTime: rec?.endTime ?? '18:00',
+      isActive: rec?.isActive ?? false, isOverride: false,
+      scheduleType: rec?.scheduleType ?? 'fulltime',
+      secondStartTime: rec?.secondStartTime ?? null,
+      secondEndTime:   rec?.secondEndTime   ?? null,
+    };
   });
 }
 
 async function setWeekSchedule(userId, weekStart, days) {
   const prof = await prisma.professional.findUnique({ where: { userId } });
   if (!prof) throw new Error('Professional profile not found');
+  days.forEach(validateDay);
   const ws = parseDate(weekStart);
-  return Promise.all(days.map(({ dayOfWeek, startTime, endTime, isActive }) =>
-    prisma.scheduleOverride.upsert({
+  return Promise.all(days.map(({ dayOfWeek, startTime, endTime, isActive, scheduleType = 'fulltime', secondStartTime = null, secondEndTime = null }) => {
+    const data = { startTime, endTime, isActive: isActive ?? true, scheduleType, secondStartTime, secondEndTime };
+    return prisma.scheduleOverride.upsert({
       where: { professionalId_weekStart_dayOfWeek: { professionalId: prof.id, weekStart: ws, dayOfWeek } },
-      update: { startTime, endTime, isActive: isActive ?? true },
-      create: { professionalId: prof.id, weekStart: ws, dayOfWeek, startTime, endTime, isActive: isActive ?? true },
-    })
-  ));
+      update: data,
+      create: { professionalId: prof.id, weekStart: ws, dayOfWeek, ...data },
+    });
+  }));
 }
 
 async function deleteWeekSchedule(userId, weekStart) {

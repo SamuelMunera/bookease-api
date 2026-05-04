@@ -251,14 +251,17 @@ model BusinessHours {
 // Weekly recurring availability per professional
 // dayOfWeek: 0=Sunday ... 6=Saturday
 model Schedule {
-  id             String   @id @default(cuid())
-  professionalId String
-  dayOfWeek      Int
-  startTime      String
-  endTime        String
-  isActive       Boolean  @default(true)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id              String   @id @default(cuid())
+  professionalId  String
+  dayOfWeek       Int
+  startTime       String
+  endTime         String
+  isActive        Boolean  @default(true)
+  scheduleType    String   @default("fulltime")
+  secondStartTime String?
+  secondEndTime   String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   professional Professional @relation(fields: [professionalId], references: [id])
 
@@ -267,14 +270,17 @@ model Schedule {
 
 // Per-week overrides for the recurring schedule
 model ScheduleOverride {
-  id             String   @id @default(cuid())
-  professionalId String
-  weekStart      DateTime @db.Date
-  dayOfWeek      Int
-  startTime      String
-  endTime        String
-  isActive       Boolean  @default(true)
-  createdAt      DateTime @default(now())
+  id              String   @id @default(cuid())
+  professionalId  String
+  weekStart       DateTime @db.Date
+  dayOfWeek       Int
+  startTime       String
+  endTime         String
+  isActive        Boolean  @default(true)
+  scheduleType    String   @default("fulltime")
+  secondStartTime String?
+  secondEndTime   String?
+  createdAt       DateTime @default(now())
 
   professional Professional @relation(fields: [professionalId], references: [id])
 
