@@ -300,9 +300,48 @@ async function remove(id, ownerId) {
   return prisma.business.delete({ where: { id, ownerId } });
 }
 
+// Newest ACTIVE businesses ordered by creation date
+async function getNewest(limit = 8) {
+  return prisma.business.findMany({
+    where: { status: 'ACTIVE' },
+    orderBy: { createdAt: 'desc' },
+    take: limit,
+    select: PUBLIC_BUSINESS_SELECT,
+  });
+}
+
+// Top ACTIVE businesses by total non-cancelled bookings across all their professionals
+async function getTopBooked(limit = 8) {
+  const rows = await prisma.$queryRaw`
+    SELECT b.id, COUNT(bk.id)::int AS "bookingCount"
+    FROM "Business" b
+    INNER JOIN "Professional" p ON p."businessId" = b.id
+    INNER JOIN "Booking" bk ON bk."professionalId" = p.id
+    WHERE b.status = 'ACTIVE'::"BusinessStatus"
+      AND bk.status != 'CANCELLED'::"BookingStatus"
+    GROUP BY b.id
+    ORDER BY "bookingCount" DESC
+    LIMIT ${limit}
+  `;
+  if (!rows.length) return [];
+
+  const idOrder = rows.map(r => r.id);
+  const countMap = Object.fromEntries(rows.map(r => [r.id, r.bookingCount]));
+
+  const businesses = await prisma.business.findMany({
+    where: { id: { in: idOrder }, status: 'ACTIVE' },
+    select: PUBLIC_BUSINESS_SELECT,
+  });
+
+  return idOrder
+    .map(id => businesses.find(b => b.id === id))
+    .filter(Boolean)
+    .map(b => ({ ...b, bookingCount: countMap[b.id] }));
+}
+
 module.exports = {
   create, findAll, findById, getMyBusiness,
   updateProfile, update, remove,
   sendVerificationEmail, verifyEmailToken,
-  checkDuplicate,
+  checkDuplicate, getNewest, getTopBooked,
 };

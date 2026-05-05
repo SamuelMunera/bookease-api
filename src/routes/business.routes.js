@@ -54,6 +54,22 @@ router.get('/me/hours',                          authenticate, requireRole('BUSI
 router.put('/me/hours',                          authenticate, requireRole('BUSINESS_OWNER'), extrasController.setMyHours);
 
 router.get('/', businessController.findAll);
+
+// Discovery — newest and most-booked (must be before /:id)
+router.get('/newest', async (req, res) => {
+  try {
+    const data = await require('../services/business.service').getNewest(8);
+    res.json(data);
+  } catch (err) { res.status(500).json({ error: 'Internal server error' }); }
+});
+
+router.get('/top-booked', async (req, res) => {
+  try {
+    const data = await require('../services/business.service').getTopBooked(8);
+    res.json(data);
+  } catch (err) { res.status(500).json({ error: 'Internal server error' }); }
+});
+
 router.get('/:id', businessController.findById);
 router.post('/', authenticate, requireRole('BUSINESS_OWNER'), businessController.create);
 router.put('/:id', authenticate, requireRole('BUSINESS_OWNER'), businessController.update);
