@@ -154,17 +154,34 @@ function isValidTime(t) {
   return typeof t === 'string' && /^\d{2}:\d{2}$/.test(t);
 }
 
+// Returns IDs of businesses whose city matches the search term
+// using unaccent + ILIKE so "Bogota" matches "Bogotá" (accent-insensitive, case-insensitive)
+async function findCityIds(city, status = 'ACTIVE') {
+  const rows = await prisma.$queryRaw`
+    SELECT id FROM "Business"
+    WHERE status = ${status}::"BusinessStatus"
+    AND unaccent(lower("city")) ILIKE unaccent(lower(${`%${city}%`}))
+  `;
+  return rows.map(r => r.id);
+}
+
 async function findAll({ category, city, lat, lng, radius, time } = {}) {
   const userLat = lat ? parseFloat(lat) : null;
   const userLng = lng ? parseFloat(lng) : null;
   const maxRadius = radius ? parseFloat(radius) : null;
   const validTime = isValidTime(time) ? time : null;
 
+  // Accent-insensitive city matching via unaccent — runs only when no geo search
+  let cityIds = null;
+  if (city && !userLat) {
+    cityIds = await findCityIds(city);
+  }
+
   const businesses = await prisma.business.findMany({
     where: {
       status: 'ACTIVE',
       ...(category && { category }),
-      ...(city && !userLat && { city: { contains: city, mode: 'insensitive' } }),
+      ...(cityIds !== null ? { id: { in: cityIds } } : city && userLat ? { city: { contains: city, mode: 'insensitive' } } : {}),
       // Filter by time: business must have at least one professional whose schedule covers the time
       ...(validTime && {
         professionals: {
