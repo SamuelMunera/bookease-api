@@ -32,45 +32,4 @@ ALTER TABLE "Subscription" ADD CONSTRAINT "Subscription_businessId_fkey"
 ALTER TABLE "Subscription" ADD CONSTRAINT "Subscription_professionalId_fkey"
     FOREIGN KEY ("professionalId") REFERENCES "Professional"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
--- Backfill: existing businesses → ACTIVE (ya estaban usando la plataforma)
-INSERT INTO "Subscription" (
-    id, status, plan, country, "paymentGateway",
-    "currentPeriodStart", "currentPeriodEnd", "trialEndsAt",
-    "cancelAtPeriodEnd", "businessId", "createdAt", "updatedAt"
-)
-SELECT
-    gen_random_uuid()::text,
-    'ACTIVE'::"SubscriptionStatus",
-    b.plan,
-    b.country,
-    b."paymentGateway",
-    NOW(),
-    NOW() + INTERVAL '30 days',
-    NULL,
-    false,
-    b.id,
-    NOW(),
-    NOW()
-FROM "Business" b;
-
--- Backfill: solo professionals (sin negocio) → ACTIVE
-INSERT INTO "Subscription" (
-    id, status, plan, country, "paymentGateway",
-    "currentPeriodStart", "currentPeriodEnd", "trialEndsAt",
-    "cancelAtPeriodEnd", "professionalId", "createdAt", "updatedAt"
-)
-SELECT
-    gen_random_uuid()::text,
-    'ACTIVE'::"SubscriptionStatus",
-    p.plan,
-    p.country,
-    CASE WHEN p.country = 'CO' THEN 'WOMPI' ELSE NULL END,
-    NOW(),
-    NOW() + INTERVAL '30 days',
-    NULL,
-    false,
-    p.id,
-    NOW(),
-    NOW()
-FROM "Professional" p
-WHERE p."businessId" IS NULL;
+-- Backfills removed: handled by seed on fresh resets
