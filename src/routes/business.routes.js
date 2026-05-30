@@ -58,14 +58,18 @@ router.get('/', businessController.findAll);
 // Discovery — newest and most-booked (must be before /:id)
 router.get('/newest', async (req, res) => {
   try {
-    const data = await require('../services/business.service').getNewest(8);
+    const { userCountry } = req.query;
+    const country = ['CO','US'].includes(userCountry) ? userCountry : undefined;
+    const data = await require('../services/business.service').getNewest(8, country);
     res.json(data);
   } catch (err) { res.status(500).json({ error: 'Internal server error' }); }
 });
 
 router.get('/top-booked', async (req, res) => {
   try {
-    const data = await require('../services/business.service').getTopBooked(8);
+    const { userCountry } = req.query;
+    const country = ['CO','US'].includes(userCountry) ? userCountry : undefined;
+    const data = await require('../services/business.service').getTopBooked(8, country);
     res.json(data);
   } catch (err) { res.status(500).json({ error: 'Internal server error' }); }
 });

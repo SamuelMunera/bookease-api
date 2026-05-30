@@ -165,7 +165,7 @@ async function findCityIds(city, status = 'ACTIVE') {
   return rows.map(r => r.id);
 }
 
-async function findAll({ category, city, lat, lng, radius, time } = {}) {
+async function findAll({ category, city, lat, lng, radius, time, userCountry } = {}) {
   const userLat = lat ? parseFloat(lat) : null;
   const userLng = lng ? parseFloat(lng) : null;
   const maxRadius = radius ? parseFloat(radius) : null;
@@ -208,7 +208,17 @@ async function findAll({ category, city, lat, lng, radius, time } = {}) {
     select: { ...PUBLIC_BUSINESS_SELECT, lat: true, lng: true },
   });
 
-  if (!userLat || !userLng) return businesses;
+  if (!userLat || !userLng) {
+    // Sin búsqueda geográfica: mismo país primero
+    if (userCountry) {
+      return [...businesses].sort((a, b) => {
+        const aLocal = a.country === userCountry ? 0 : 1;
+        const bLocal = b.country === userCountry ? 0 : 1;
+        return aLocal - bLocal;
+      });
+    }
+    return businesses;
+  }
 
   const withDistance = businesses.map(b => {
     if (b.lat != null && b.lng != null) {
@@ -296,18 +306,21 @@ async function remove(id, ownerId) {
   return prisma.business.delete({ where: { id, ownerId } });
 }
 
-// Newest ACTIVE businesses ordered by creation date
-async function getNewest(limit = 8) {
-  return prisma.business.findMany({
+// Newest ACTIVE businesses — mismo país primero, luego por fecha
+async function getNewest(limit = 8, userCountry) {
+  const rows = await prisma.business.findMany({
     where: { status: 'ACTIVE' },
     orderBy: { createdAt: 'desc' },
-    take: limit,
     select: PUBLIC_BUSINESS_SELECT,
   });
+  if (!userCountry) return rows.slice(0, limit);
+  const local = rows.filter(b => b.country === userCountry);
+  const other = rows.filter(b => b.country !== userCountry);
+  return [...local, ...other].slice(0, limit);
 }
 
 // Top ACTIVE businesses by total non-cancelled bookings across all their professionals
-async function getTopBooked(limit = 8) {
+async function getTopBooked(limit = 8, userCountry) {
   const rows = await prisma.$queryRaw`
     SELECT b.id, COUNT(bk.id)::int AS "bookingCount"
     FROM "Business" b
@@ -329,10 +342,15 @@ async function getTopBooked(limit = 8) {
     select: PUBLIC_BUSINESS_SELECT,
   });
 
-  return idOrder
+  const result = idOrder
     .map(id => businesses.find(b => b.id === id))
     .filter(Boolean)
     .map(b => ({ ...b, bookingCount: countMap[b.id] }));
+
+  if (!userCountry) return result;
+  const local = result.filter(b => b.country === userCountry);
+  const other = result.filter(b => b.country !== userCountry);
+  return [...local, ...other];
 }
 
 module.exports = {
