@@ -311,12 +311,12 @@ async function getTopBooked(limit = 8) {
   const rows = await prisma.$queryRaw`
     SELECT b.id, COUNT(bk.id)::int AS "bookingCount"
     FROM "Business" b
-    INNER JOIN "Professional" p ON p."businessId" = b.id
-    INNER JOIN "Booking" bk ON bk."professionalId" = p.id
-    WHERE b.status = 'ACTIVE'::"BusinessStatus"
+    LEFT JOIN "Professional" p ON p."businessId" = b.id
+    LEFT JOIN "Booking" bk ON bk."professionalId" = p.id
       AND bk.status != 'CANCELLED'::"BookingStatus"
+    WHERE b.status = 'ACTIVE'::"BusinessStatus"
     GROUP BY b.id
-    ORDER BY "bookingCount" DESC
+    ORDER BY "bookingCount" DESC, b."createdAt" DESC
     LIMIT ${limit}
   `;
   if (!rows.length) return [];
