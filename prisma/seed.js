@@ -90,9 +90,9 @@ async function seedCategories() {
   console.log('📂  Creando categorías...');
   await prisma.category.createMany({
     data: [
-      { name: 'Barbería',         slug: 'barbershop', icon: '✂️' },
-      { name: 'Spa & Wellness',   slug: 'spa',        icon: '🧖' },
-      { name: 'Salón de Belleza', slug: 'salon',      icon: '💅' },
+      { name: 'Barbería',         slug: 'BARBERSHOP', icon: '✂️' },
+      { name: 'Spa & Wellness',   slug: 'SPA',        icon: '🧖' },
+      { name: 'Salón de Belleza', slug: 'SALON',      icon: '💅' },
     ],
   });
 }
