@@ -88,7 +88,7 @@ async function create(ownerId, data) {
   }
 
   const business = await prisma.business.create({
-    data: { ...clean, ownerId, nameNorm, phoneNorm, addressNorm },
+    data: { ...clean, ownerId, nameNorm, phoneNorm, addressNorm, status: 'ACTIVE' },
   });
 
   geocodeAddress(business.address, business.city).then(coords => {

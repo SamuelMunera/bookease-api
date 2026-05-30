@@ -90,7 +90,7 @@ model Business {
   zipCode            String?
   lat                Float?
   lng                Float?
-  status             BusinessStatus @default(INACTIVE)
+  status             BusinessStatus @default(ACTIVE)
   emailVerified      Boolean   @default(false)
   plan               String   @default("team")
   paymentGateway     String?
