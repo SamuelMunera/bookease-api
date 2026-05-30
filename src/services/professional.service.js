@@ -221,9 +221,11 @@ async function findByBusiness(businessId) {
   return prisma.professional.findMany({ where: { businessId } });
 }
 
-async function findHomeProfessionals({ city } = {}) {
+async function findHomeProfessionals({ city, country } = {}) {
+  const where = { offersHomeService: true };
+  if (country) where.country = country;
   const rows = await prisma.professional.findMany({
-    where: { offersHomeService: true },
+    where,
     select: {
       id: true, name: true, specialty: true, bio: true, avatarUrl: true,
       homeServiceArea: true, homeServiceSurcharge: true, homeServiceNotes: true,

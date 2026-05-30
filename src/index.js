@@ -95,6 +95,35 @@ app.use('/api/subscriptions', generalLimiter, require('./routes/subscription.rou
 app.use('/api/cron', require('./routes/cron.routes'));
 app.get('/health', (_, res) => res.json({ status: 'ok' }));
 
+const SUPPORTED_COUNTRIES = ['CO', 'US'];
+app.get('/api/geo/country', generalLimiter, async (req, res) => {
+  // 1. CDN headers (Vercel / Cloudflare inject these in production)
+  const vercel = req.headers['x-vercel-ip-country'];
+  const cf     = req.headers['cf-ipcountry'];
+  if (vercel && SUPPORTED_COUNTRIES.includes(vercel)) return res.json({ country: vercel, method: 'vercel' });
+  if (cf     && SUPPORTED_COUNTRIES.includes(cf))     return res.json({ country: cf,     method: 'cloudflare' });
+
+  // 2. IP geolocation via ipapi.co (free, no API key, ~30k req/month)
+  const raw = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket?.remoteAddress || '';
+  const isLocal = !raw || raw === '127.0.0.1' || raw === '::1' || raw.startsWith('192.168.') || raw.startsWith('10.') || raw.startsWith('172.');
+  if (!isLocal) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 2500);
+    try {
+      const geoRes = await fetch(`https://ipapi.co/${raw}/json/`, { signal: ctrl.signal });
+      const geo = await geoRes.json();
+      if (SUPPORTED_COUNTRIES.includes(geo.country_code)) {
+        clearTimeout(timer);
+        return res.json({ country: geo.country_code, method: 'ipapi' });
+      }
+    } catch { /* timeout or network error → fallback */ }
+    finally { clearTimeout(timer); }
+  }
+
+  // 3. Default fallback
+  res.json({ country: 'CO', method: 'fallback' });
+});
+
 // Catch-all 404
 app.use((_req, res) => res.status(404).json({ error: 'Not found' }));
 

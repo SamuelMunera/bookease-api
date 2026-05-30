@@ -223,8 +223,8 @@ async function deletePhoto(req, res) {
 
 async function findHomeProfessionals(req, res) {
   try {
-    const { city } = req.query;
-    const data = await professionalService.findHomeProfessionals({ city });
+    const { city, country } = req.query;
+    const data = await professionalService.findHomeProfessionals({ city, country });
     res.json(data);
   } catch (err) { res.status(500).json({ error: 'Internal server error' }); }
 }
