@@ -1,5 +1,3 @@
-// Source of truth for subscription plans.
-// Add payment provider IDs here later (stripe_price_id, etc.)
 
 const PLAN_LIMITS = {
   solo:       1,

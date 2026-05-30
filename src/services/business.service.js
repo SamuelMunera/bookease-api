@@ -88,7 +88,7 @@ async function create(ownerId, data) {
   }
 
   const business = await prisma.business.create({
-    data: { ...clean, ownerId, nameNorm, phoneNorm, addressNorm, paymentGateway: 'STRIPE' },
+    data: { ...clean, ownerId, nameNorm, phoneNorm, addressNorm },
   });
 
   geocodeAddress(business.address, business.city).then(coords => {
@@ -274,10 +274,6 @@ async function updateProfile(ownerId, data) {
   if (clean.name)    norms.nameNorm    = normalizeName(clean.name);
   if (clean.phone)   norms.phoneNorm   = normalizePhone(clean.phone);
   if (clean.address) norms.addressNorm = normalizeAddress(clean.address);
-
-  if (clean.country) {
-    clean.paymentGateway = 'STRIPE';
-  }
 
   const updated = await prisma.business.update({ where: { id: business.id }, data: { ...clean, ...norms } });
 
