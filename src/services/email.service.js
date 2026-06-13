@@ -155,56 +155,99 @@ function reminderHtml({ name, service, date, startTime, endTime, proOrClient, is
 }
 
 /* ── Send helpers ─────────────────────────────────────────── */
+
+/**
+ * Sends one email via Resend and turns the SDK's non-throwing
+ * {data, error} response into a logged, traceable result.
+ * Resolves to { ok, recipient, subject } and NEVER throws —
+ * callers collect the results and decide whether to raise.
+ */
+async function sendOne({ bookingId, kind, recipient, subject, html }) {
+  const meta = { bookingId, kind, to: recipient, subject, ts: new Date().toISOString() };
+  try {
+    const result = await getResend().emails.send({ from: FROM, to: recipient, subject, html });
+    if (result?.error) {
+      console.error('[email] FAILED', JSON.stringify({ ...meta, from: FROM, error: result.error }));
+      return { ok: false, recipient, subject, error: result.error };
+    }
+    console.log('[email] SENT', JSON.stringify({ ...meta, from: FROM, messageId: result?.data?.id }));
+    return { ok: true, recipient, subject, messageId: result?.data?.id };
+  } catch (err) {
+    console.error('[email] EXCEPTION', JSON.stringify({ ...meta, from: FROM, error: err.message }));
+    return { ok: false, recipient, subject, error: err.message };
+  }
+}
+
+/**
+ * Runs a batch of sendOne() calls and throws if any failed, so the
+ * outer .catch() in booking/homeBooking services logs a real error
+ * instead of silently swallowing Resend failures.
+ */
+async function runBatch(kind, bookingId, jobs) {
+  if (!jobs.length) {
+    console.log('[email] SKIPPED', JSON.stringify({ bookingId, kind, ts: new Date().toISOString(), reason: 'no real recipients' }));
+    return;
+  }
+  const results = await Promise.all(jobs.map(sendOne));
+  const failed = results.filter(r => !r.ok);
+  if (failed.length) {
+    throw new Error(`[email] ${kind} failed for booking ${bookingId}: ${JSON.stringify(failed.map(f => ({ to: f.recipient, error: f.error })))}`);
+  }
+}
+
 async function sendBookingConfirmation(booking) {
   const { clientName, clientEmail, proName, proEmail, service, date, startTime, endTime, isHome, address } = extract(booking);
-  const sends = [];
+  const jobs = [];
 
   if (isReal(clientEmail)) {
-    sends.push(getResend().emails.send({
-      from: FROM, to: clientEmail,
+    jobs.push({
+      bookingId: booking.id, kind: 'confirmation:client', recipient: clientEmail,
       subject: `Reserva confirmada – ${service}`,
       html: confirmHtml({ to:'client', name:clientName, service, date, startTime, endTime, proOrClient:proName, isHome, address }),
-    }));
+    });
   }
   if (isReal(proEmail)) {
-    sends.push(getResend().emails.send({
-      from: FROM, to: proEmail,
+    jobs.push({
+      bookingId: booking.id, kind: 'confirmation:pro', recipient: proEmail,
       subject: `Nueva reserva – ${service}`,
       html: confirmHtml({ to:'pro', name:proName, service, date, startTime, endTime, proOrClient:clientName, isHome, address }),
-    }));
+    });
   }
-  await Promise.allSettled(sends);
+  await runBatch('confirmation', booking.id, jobs);
 }
 
 async function sendBookingCancellation(booking) {
   const { clientName, clientEmail, proName, proEmail, service, date, startTime } = extract(booking);
-  const sends = [];
+  const jobs = [];
 
   if (isReal(clientEmail)) {
-    sends.push(getResend().emails.send({
-      from: FROM, to: clientEmail,
+    jobs.push({
+      bookingId: booking.id, kind: 'cancellation:client', recipient: clientEmail,
       subject: `Reserva cancelada – ${service}`,
       html: cancelHtml({ to:'client', name:clientName, service, date, startTime, proOrClient:proName }),
-    }));
+    });
   }
   if (isReal(proEmail)) {
-    sends.push(getResend().emails.send({
-      from: FROM, to: proEmail,
+    jobs.push({
+      bookingId: booking.id, kind: 'cancellation:pro', recipient: proEmail,
       subject: `Reserva cancelada – ${service}`,
       html: cancelHtml({ to:'pro', name:proName, service, date, startTime, proOrClient:clientName }),
-    }));
+    });
   }
-  await Promise.allSettled(sends);
+  await runBatch('cancellation', booking.id, jobs);
 }
 
 async function sendBookingReminder(booking) {
   const { clientName, clientEmail, proName, service, date, startTime, endTime, isHome, address } = extract(booking);
-  if (!isReal(clientEmail)) return;
-  await getResend().emails.send({
-    from: FROM, to: clientEmail,
-    subject: `Recordatorio: tu cita de ${service} es mañana`,
-    html: reminderHtml({ name:clientName, service, date, startTime, endTime, proOrClient:proName, isHome, address }),
-  });
+  const jobs = [];
+  if (isReal(clientEmail)) {
+    jobs.push({
+      bookingId: booking.id, kind: 'reminder:client', recipient: clientEmail,
+      subject: `Recordatorio: tu cita de ${service} es mañana`,
+      html: reminderHtml({ name:clientName, service, date, startTime, endTime, proOrClient:proName, isHome, address }),
+    });
+  }
+  await runBatch('reminder', booking.id, jobs);
 }
 
 module.exports = { sendBookingConfirmation, sendBookingCancellation, sendBookingReminder };
