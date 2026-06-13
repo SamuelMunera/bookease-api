@@ -59,7 +59,21 @@ async function create(ownerId, data) {
   );
 
   // Referral/courtesy code (validated before creating the business)
-  const referral = await referralService.resolveReferralCode(data.referralCode);
+  const rawCode = data.referralCode;
+  let referral;
+  try {
+    referral = await referralService.resolveReferralCode(rawCode);
+  } catch (err) {
+    console.warn('[business.create] referral code rejected', JSON.stringify({
+      ownerId, rawCode, reason: err.message, ts: new Date().toISOString(),
+    }));
+    throw err;
+  }
+  if (rawCode) {
+    console.log('[business.create] referral code accepted', JSON.stringify({
+      ownerId, rawCode, type: referral?.type, ts: new Date().toISOString(),
+    }));
+  }
 
   // Address validation
   const addrErrors = validateAddress({
@@ -91,16 +105,27 @@ async function create(ownerId, data) {
     }
   }
 
-  const business = await prisma.business.create({
-    data: {
-      ...clean, ownerId, nameNorm, phoneNorm, addressNorm, status: 'ACTIVE',
-      ...(referral?.type === 'PROMOTER' ? { promoterId: referral.promoterId } : {}),
-    },
+  // Business creation and courtesy-code redemption happen atomically: if the
+  // redemption fails (e.g. code used concurrently), the business is not left
+  // behind in an orphaned, half-configured state.
+  const business = await prisma.$transaction(async (tx) => {
+    const biz = await tx.business.create({
+      data: {
+        ...clean, ownerId, nameNorm, phoneNorm, addressNorm, status: 'ACTIVE',
+        ...(referral?.type === 'PROMOTER' ? { promoterId: referral.promoterId } : {}),
+      },
+    });
+
+    if (referral?.type === 'COURTESY') {
+      await referralService.redeemCourtesyCode(referral.courtesyCodeId, { businessId: biz.id }, tx);
+    }
+
+    return biz;
   });
 
-  if (referral?.type === 'COURTESY') {
-    await referralService.redeemCourtesyCode(referral.courtesyCodeId, { businessId: business.id });
-  }
+  console.log('[business.create] created', JSON.stringify({
+    ownerId, businessId: business.id, referralType: referral?.type ?? null, ts: new Date().toISOString(),
+  }));
 
   geocodeAddress(business.address, business.city).then(coords => {
     if (coords) prisma.business.update({ where: { id: business.id }, data: coords }).catch(() => {});
