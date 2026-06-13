@@ -1,6 +1,6 @@
 const { Resend } = require('resend');
 
-const FROM = process.env.EMAIL_FROM || 'Bookease <noreply@bookease.com>';
+const FROM = process.env.EMAIL_FROM || 'Slotly <noreply@slotly.app>';
 
 let _resend;
 function getResend() {

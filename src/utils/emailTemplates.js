@@ -1,9 +1,9 @@
 function businessVerifyEmail(businessName, verifyUrl) {
   return {
-    subject: `Verifica el email de ${businessName} – Bookease`,
+    subject: `Verifica el email de ${businessName} – Slotly`,
     html: `
 <div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:40px 32px;background:#fff;">
-  <p style="font-size:22px;font-weight:800;margin:0 0 8px;color:#111;">Bookease</p>
+  <p style="font-size:22px;font-weight:800;margin:0 0 8px;color:#111;">Slotly</p>
   <hr style="border:none;border-top:1px solid #eee;margin:0 0 24px;">
   <h1 style="font-size:18px;font-weight:700;color:#111;margin:0 0 12px;">
     Confirma el email de <em>${businessName}</em>

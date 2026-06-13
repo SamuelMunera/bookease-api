@@ -360,7 +360,7 @@ async function createManualBooking({ creatorId, creatorRole, professionalId, ser
     client = await prisma.user.create({
       data: {
         name:     clientName || (lookupEmail ? lookupEmail.split('@')[0] : 'Cliente'),
-        email:    lookupEmail || `guest-${crypto.randomBytes(8).toString('hex')}@bookease.internal`,
+        email:    lookupEmail || `guest-${crypto.randomBytes(8).toString('hex')}@slotly.internal`,
         password: await bcrypt.hash(tempPass, 12),
         role:     'CLIENT',
         ...(clientPhone ? { phone: clientPhone } : {}),

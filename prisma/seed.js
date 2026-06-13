@@ -1,4 +1,4 @@
-// prisma/seed.js — Bookease definitive demo seed
+// prisma/seed.js — Slotly definitive demo seed
 if (require.main === module) require('dotenv').config();
 
 const { PrismaClient } = require('@prisma/client');
@@ -444,7 +444,7 @@ async function seedHomePros() {
 
 // ─── main ─────────────────────────────────────────────────────────────────────
 async function main() {
-  console.log('\n🌱  Iniciando seed demo de Bookease...\n');
+  console.log('\n🌱  Iniciando seed demo de Slotly...\n');
   await cleanup();
   await seedCategories();
   await seedElFilo();

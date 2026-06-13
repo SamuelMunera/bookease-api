@@ -87,7 +87,7 @@ async function forgotPassword(email) {
     data: { token, userId: user.id, expiresAt },
   });
 
-  const frontendUrl = process.env.FRONTEND_URL || 'https://bookease-client-mu.vercel.app';
+  const frontendUrl = process.env.FRONTEND_URL || 'https://slotly.app';
   const resetUrl = `${frontendUrl}/reset-password?token=${token}`;
 
   try {
@@ -95,7 +95,7 @@ async function forgotPassword(email) {
     await resend.emails.send({
       from: FROM,
       to: email,
-      subject: 'Recuperar contraseña · Bookease',
+      subject: 'Recuperar contraseña · Slotly',
       html: `
         <div style="font-family:sans-serif;max-width:480px;margin:0 auto">
           <h2 style="color:#7c3aed">Recuperar contraseña</h2>

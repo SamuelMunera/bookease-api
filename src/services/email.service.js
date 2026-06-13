@@ -1,6 +1,6 @@
 const { getResend, FROM } = require('../config/email');
 
-const APP_URL = process.env.CLIENT_URL || 'https://bookease.vercel.app';
+const APP_URL = process.env.CLIENT_URL || 'https://slotly.app';
 
 function escHtml(str) {
   return String(str ?? '')
@@ -12,7 +12,7 @@ function escHtml(str) {
 }
 
 function isReal(email) {
-  return email && typeof email === 'string' && !email.endsWith('@bookease.internal');
+  return email && typeof email === 'string' && !email.endsWith('@slotly.internal');
 }
 
 function fmtDate(d) {
@@ -94,7 +94,7 @@ function confirmHtml({ to, name, service, date, startTime, endTime, proOrClient,
       <table class="detail-table">${rows.map(([l,v]) => `<tr><td class="label">${l}</td><td class="value">${v}</td></tr>`).join('')}</table>
       <a href="${APP_URL}/my-bookings" class="cta">Ver mis reservas</a>
     </div>
-    <div class="footer">Bookease · No respondas a este correo.<br>Si no hiciste esta reserva, <a href="${APP_URL}" style="color:#D4A853">ingresa a la app</a> y cancélala.</div>
+    <div class="footer">Slotly · No respondas a este correo.<br>Si no hiciste esta reserva, <a href="${APP_URL}" style="color:#D4A853">ingresa a la app</a> y cancélala.</div>
   `);
 }
 
@@ -124,7 +124,7 @@ function cancelHtml({ to, name, service, date, startTime, proOrClient }) {
       <table class="detail-table">${rows.map(([l,v]) => `<tr><td class="label">${l}</td><td class="value">${v}</td></tr>`).join('')}</table>
       ${isClient ? `<a href="${APP_URL}" class="cta">Reservar de nuevo</a>` : ''}
     </div>
-    <div class="footer">Bookease · No respondas a este correo.</div>
+    <div class="footer">Slotly · No respondas a este correo.</div>
   `);
 }
 
@@ -150,7 +150,7 @@ function reminderHtml({ name, service, date, startTime, endTime, proOrClient, is
       <table class="detail-table">${rows.map(([l,v]) => `<tr><td class="label">${l}</td><td class="value">${v}</td></tr>`).join('')}</table>
       <a href="${APP_URL}/my-bookings" class="cta">Ver mis reservas</a>
     </div>
-    <div class="footer">Bookease · No respondas a este correo.<br>¿No puedes asistir? <a href="${APP_URL}/my-bookings" style="color:#D4A853">Cancela con tiempo</a>.</div>
+    <div class="footer">Slotly · No respondas a este correo.<br>¿No puedes asistir? <a href="${APP_URL}/my-bookings" style="color:#D4A853">Cancela con tiempo</a>.</div>
   `);
 }
 

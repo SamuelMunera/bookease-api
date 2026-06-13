@@ -16,7 +16,7 @@ async function geocodeAddress(address, city) {
     const q = encodeURIComponent(`${address}, ${city}`);
     const res = await fetch(
       `https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1`,
-      { headers: { 'User-Agent': 'Bookease/1.0 (bookease.app)' } }
+      { headers: { 'User-Agent': 'Slotly/1.0 (slotly.app)' } }
     );
     const data = await res.json();
     if (data.length > 0) {
