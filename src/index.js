@@ -95,6 +95,21 @@ app.use('/api/subscriptions', generalLimiter, require('./routes/subscription.rou
 app.use('/api/cron', require('./routes/cron.routes'));
 app.get('/health', (_, res) => res.json({ status: 'ok' }));
 
+// Public platform stats
+const prisma = require('./config/database');
+app.get('/api/stats', generalLimiter, async (_req, res) => {
+  try {
+    const [businessCount, bookingCount, cityRows] = await Promise.all([
+      prisma.business.count(),
+      prisma.booking.count(),
+      prisma.business.findMany({ select: { city: true }, distinct: ['city'], where: { city: { not: '' } } }),
+    ]);
+    res.json({ businesses: businessCount, cities: cityRows.length, bookings: bookingCount });
+  } catch {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 const SUPPORTED_COUNTRIES = ['CO', 'US'];
 app.get('/api/geo/country', generalLimiter, async (req, res) => {
   // 1. CDN headers (Vercel / Cloudflare inject these in production)
