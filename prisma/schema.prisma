@@ -100,6 +100,7 @@ model Business {
   nameNorm           String?
   phoneNorm          String?
   addressNorm        String?
+  promoterId         String?
   owner             User              @relation(fields: [ownerId], references: [id])
   professionals     Professional[]
   services          Service[]
@@ -109,6 +110,8 @@ model Business {
   joinRequests      JoinRequest[]
   reviews           Review[]
   subscription      Subscription?
+  promoter          Promoter?     @relation("PromoterBusinesses", fields: [promoterId], references: [id])
+  redeemedCourtesy  CourtesyCode?
 }
 
 model Professional {
@@ -136,6 +139,7 @@ model Professional {
   homeServiceArea      String?
   homeServiceSurcharge Decimal? @db.Decimal(10, 2)
   homeServiceNotes     String?
+  promoterId           String?
 
   business           Business?                  @relation(fields: [businessId], references: [id])
   user               User?                      @relation(fields: [userId], references: [id])
@@ -151,6 +155,8 @@ model Professional {
   serviceConfigs     ProfessionalServiceConfig[]
   photos             ProfessionalPhoto[]
   reviews            Review[]
+  promoter           Promoter?     @relation("PromoterProfessionals", fields: [promoterId], references: [id])
+  redeemedCourtesy   CourtesyCode?
 }
 
 model ProfessionalPhoto {
@@ -441,6 +447,11 @@ enum CourtesyCodeStatus {
   USED
 }
 
+enum ReferralRedeemerType {
+  BUSINESS
+  PROFESSIONAL
+}
+
 // Referral program: promoters get a personal referral code to share.
 model Promoter {
   id        String         @id @default(cuid())
@@ -452,13 +463,24 @@ model Promoter {
   status    PromoterStatus @default(ACTIVE)
   createdAt DateTime       @default(now())
   updatedAt DateTime       @updatedAt
+
+  businesses    Business[]     @relation("PromoterBusinesses")
+  professionals Professional[] @relation("PromoterProfessionals")
 }
 
 // Referral program: single-use courtesy codes generated manually from admin.
+// Once redeemed during business/professional registration, becomes USED and
+// links to whichever entity redeemed it.
 model CourtesyCode {
   id        String             @id @default(cuid())
   code      String             @unique
   status    CourtesyCodeStatus @default(UNUSED)
   usedAt    DateTime?
   createdAt DateTime           @default(now())
+
+  redeemedByType           ReferralRedeemerType?
+  redeemedBusinessId       String?       @unique
+  redeemedProfessionalId   String?       @unique
+  redeemedBusiness         Business?     @relation(fields: [redeemedBusinessId], references: [id])
+  redeemedProfessional     Professional? @relation(fields: [redeemedProfessionalId], references: [id])
 }

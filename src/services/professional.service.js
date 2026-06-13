@@ -3,13 +3,17 @@ const jwt = require('jsonwebtoken');
 const prisma = require('../config/database');
 const { getPlanLimit } = require('../config/plans');
 const subscriptionService = require('./subscription.service');
+const referralService = require('./referral.service');
 
-async function registerProfessional({ name, email, password, phone, specialty, bio, experience, businessId, offersHomeService, homeServiceArea, country, timezone, state, zipCode }) {
+async function registerProfessional({ name, email, password, phone, specialty, bio, experience, businessId, offersHomeService, homeServiceArea, country, timezone, state, zipCode, referralCode }) {
   if (!name || !email || !password) throw new Error('name, email and password are required');
   if (password.length < 8) throw new Error('La contraseña debe tener al menos 8 caracteres');
 
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) throw new Error('Email already registered');
+
+  // Referral/courtesy code (only meaningful for independent professionals)
+  const referral = await referralService.resolveReferralCode(referralCode);
 
   if (businessId) {
     const biz = await prisma.business.findUnique({
@@ -37,6 +41,7 @@ async function registerProfessional({ name, email, password, phone, specialty, b
     ...(timezone  ? { timezone } : {}),
     ...(state     ? { state } : {}),
     ...(zipCode   ? { zipCode } : {}),
+    ...(referral?.type === 'PROMOTER' ? { promoterId: referral.promoterId } : {}),
   };
 
   const user = await prisma.user.create({
@@ -58,6 +63,10 @@ async function registerProfessional({ name, email, password, phone, specialty, b
   if (!businessId && user.professional) {
     const proCountry = country || 'CO';
     subscriptionService.createForProfessional(user.professional.id, 'solo', proCountry).catch(() => {});
+  }
+
+  if (referral?.type === 'COURTESY' && user.professional) {
+    await referralService.redeemCourtesyCode(referral.courtesyCodeId, { professionalId: user.professional.id });
   }
 
   return { user, token };

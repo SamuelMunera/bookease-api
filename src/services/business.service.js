@@ -6,6 +6,7 @@ const { validateAddress } = require('../utils/addressValidation');
 const { getResend, FROM } = require('../config/email');
 const { businessVerifyEmail } = require('../utils/emailTemplates');
 const subscriptionService = require('./subscription.service');
+const referralService = require('./referral.service');
 
 const APP_URL = process.env.APP_URL || 'http://localhost:5173';
 
@@ -57,6 +58,9 @@ async function create(ownerId, data) {
     Object.entries(data).filter(([k]) => BUSINESS_EDITABLE.includes(k))
   );
 
+  // Referral/courtesy code (validated before creating the business)
+  const referral = await referralService.resolveReferralCode(data.referralCode);
+
   // Address validation
   const addrErrors = validateAddress({
     country: clean.country, address: clean.address,
@@ -88,8 +92,15 @@ async function create(ownerId, data) {
   }
 
   const business = await prisma.business.create({
-    data: { ...clean, ownerId, nameNorm, phoneNorm, addressNorm, status: 'ACTIVE' },
+    data: {
+      ...clean, ownerId, nameNorm, phoneNorm, addressNorm, status: 'ACTIVE',
+      ...(referral?.type === 'PROMOTER' ? { promoterId: referral.promoterId } : {}),
+    },
   });
+
+  if (referral?.type === 'COURTESY') {
+    await referralService.redeemCourtesyCode(referral.courtesyCodeId, { businessId: business.id });
+  }
 
   geocodeAddress(business.address, business.city).then(coords => {
     if (coords) prisma.business.update({ where: { id: business.id }, data: coords }).catch(() => {});

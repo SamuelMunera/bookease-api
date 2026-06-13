@@ -168,8 +168,36 @@ router.patch('/professionals/:id/plan', async (req, res) => {
 
 router.get('/promoters', async (_req, res) => {
   try {
-    const promoters = await prisma.promoter.findMany({ orderBy: { createdAt: 'desc' } });
-    res.json(promoters);
+    const promoters = await prisma.promoter.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: {
+        businesses: {
+          select: { id: true, plan: true, status: true, subscription: { select: { status: true } } },
+        },
+        professionals: {
+          where: { businessId: null },
+          select: { id: true, plan: true, subscription: { select: { status: true } } },
+        },
+      },
+    });
+
+    res.json(promoters.map(p => {
+      const activeBusinesses = p.businesses.filter(b => b.status === 'ACTIVE' && b.subscription?.status === 'ACTIVE');
+      const activeProfessionals = p.professionals.filter(pr => pr.subscription?.status === 'ACTIVE');
+
+      const planBreakdown = { solo: 0, team: 0, studio: 0, enterprise: 0 };
+      for (const b of activeBusinesses) planBreakdown[b.plan] = (planBreakdown[b.plan] ?? 0) + 1;
+      for (const pr of activeProfessionals) planBreakdown[pr.plan] = (planBreakdown[pr.plan] ?? 0) + 1;
+
+      const { businesses, professionals, ...rest } = p;
+      return {
+        ...rest,
+        businessesLinked: businesses.length,
+        independentsLinked: professionals.length,
+        activeCount: activeBusinesses.length + activeProfessionals.length,
+        planBreakdown,
+      };
+    }));
   } catch {
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -219,8 +247,22 @@ router.patch('/promoters/:id/status', async (req, res) => {
 
 router.get('/courtesy-codes', async (_req, res) => {
   try {
-    const codes = await prisma.courtesyCode.findMany({ orderBy: { createdAt: 'desc' } });
-    res.json(codes);
+    const codes = await prisma.courtesyCode.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: {
+        redeemedBusiness: { select: { name: true } },
+        redeemedProfessional: { select: { name: true } },
+      },
+    });
+    res.json(codes.map(c => ({
+      id: c.id,
+      code: c.code,
+      status: c.status,
+      createdAt: c.createdAt,
+      usedAt: c.usedAt,
+      redeemedByType: c.redeemedByType,
+      redeemedByName: c.redeemedBusiness?.name ?? c.redeemedProfessional?.name ?? null,
+    })));
   } catch {
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -234,22 +276,6 @@ router.post('/courtesy-codes', async (req, res) => {
     res.status(201).json(courtesy);
   } catch (err) {
     res.status(400).json({ error: err.message || 'Error al generar código' });
-  }
-});
-
-router.patch('/courtesy-codes/:id/status', async (req, res) => {
-  try {
-    const { status } = req.body;
-    if (!['UNUSED', 'USED'].includes(status)) return res.status(400).json({ error: 'Estado inválido' });
-
-    const courtesy = await prisma.courtesyCode.update({
-      where: { id: req.params.id },
-      data: { status, usedAt: status === 'USED' ? new Date() : null },
-    });
-    console.log(`[admin] código de cortesía estado: ${courtesy.code} -> ${status} by=${req.user.id}`);
-    res.json(courtesy);
-  } catch {
-    res.status(400).json({ error: 'Error al actualizar código' });
   }
 });
 
