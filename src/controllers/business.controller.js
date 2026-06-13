@@ -16,6 +16,7 @@ async function findAll(req, res) {
     const businesses = await businessService.findAll(req.query);
     res.json(businesses);
   } catch (err) {
+    console.error('GET /businesses failed', { query: req.query, error: err.message });
     res.status(500).json({ error: "Internal server error" });
   }
 }
