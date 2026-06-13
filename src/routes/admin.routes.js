@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const router = require('express').Router();
 const { authenticate, requireRole } = require('../middleware/auth');
 const prisma = require('../config/database');
@@ -5,6 +6,20 @@ const { getPlanLimit } = require('../config/plans');
 const subscriptionService = require('../services/subscription.service');
 
 const VALID_PLANS = ['solo', 'team', 'studio', 'enterprise'];
+
+function generateCode(prefix) {
+  const random = crypto.randomBytes(5).toString('hex').toUpperCase().slice(0, 8);
+  return `${prefix}-${random}`;
+}
+
+async function generateUniqueCode(prefix, model) {
+  for (let i = 0; i < 5; i++) {
+    const code = generateCode(prefix);
+    const existing = await prisma[model].findUnique({ where: { code } });
+    if (!existing) return code;
+  }
+  throw new Error('No se pudo generar un código único, intenta de nuevo');
+}
 
 router.use(authenticate, requireRole('ADMIN'));
 
@@ -146,6 +161,95 @@ router.patch('/professionals/:id/plan', async (req, res) => {
     res.json({ plan: updated.plan });
   } catch (err) {
     res.status(400).json({ error: err.message });
+  }
+});
+
+// ── Referral codes: Promotores ──────────────────────────────────────────────
+
+router.get('/promoters', async (_req, res) => {
+  try {
+    const promoters = await prisma.promoter.findMany({ orderBy: { createdAt: 'desc' } });
+    res.json(promoters);
+  } catch {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.post('/promoters', async (req, res) => {
+  try {
+    const { firstName, lastName, email, phone } = req.body;
+    if (!firstName?.trim() || !lastName?.trim() || !email?.trim()) {
+      return res.status(400).json({ error: 'Nombre, apellido y email son requeridos' });
+    }
+    const cleanEmail = String(email).trim().toLowerCase();
+    const existing = await prisma.promoter.findUnique({ where: { email: cleanEmail } });
+    if (existing) return res.status(400).json({ error: 'Ya existe un promotor con ese email' });
+
+    const code = await generateUniqueCode('PROMO', 'promoter');
+    const promoter = await prisma.promoter.create({
+      data: {
+        firstName: String(firstName).trim().slice(0, 100),
+        lastName: String(lastName).trim().slice(0, 100),
+        email: cleanEmail,
+        phone: phone ? String(phone).trim().slice(0, 30) : null,
+        code,
+      },
+    });
+    console.log(`[admin] promotor creado: ${promoter.id} (${promoter.email}) by=${req.user.id}`);
+    res.status(201).json(promoter);
+  } catch {
+    res.status(400).json({ error: 'Error al crear promotor' });
+  }
+});
+
+router.patch('/promoters/:id/status', async (req, res) => {
+  try {
+    const { status } = req.body;
+    if (!['ACTIVE', 'INACTIVE'].includes(status)) return res.status(400).json({ error: 'Estado inválido' });
+
+    const promoter = await prisma.promoter.update({ where: { id: req.params.id }, data: { status } });
+    console.log(`[admin] promotor estado: ${promoter.id} -> ${status} by=${req.user.id}`);
+    res.json(promoter);
+  } catch {
+    res.status(400).json({ error: 'Error al actualizar promotor' });
+  }
+});
+
+// ── Referral codes: Cortesías ───────────────────────────────────────────────
+
+router.get('/courtesy-codes', async (_req, res) => {
+  try {
+    const codes = await prisma.courtesyCode.findMany({ orderBy: { createdAt: 'desc' } });
+    res.json(codes);
+  } catch {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.post('/courtesy-codes', async (req, res) => {
+  try {
+    const code = await generateUniqueCode('CORTESIA', 'courtesyCode');
+    const courtesy = await prisma.courtesyCode.create({ data: { code } });
+    console.log(`[admin] código de cortesía creado: ${courtesy.code} by=${req.user.id}`);
+    res.status(201).json(courtesy);
+  } catch (err) {
+    res.status(400).json({ error: err.message || 'Error al generar código' });
+  }
+});
+
+router.patch('/courtesy-codes/:id/status', async (req, res) => {
+  try {
+    const { status } = req.body;
+    if (!['UNUSED', 'USED'].includes(status)) return res.status(400).json({ error: 'Estado inválido' });
+
+    const courtesy = await prisma.courtesyCode.update({
+      where: { id: req.params.id },
+      data: { status, usedAt: status === 'USED' ? new Date() : null },
+    });
+    console.log(`[admin] código de cortesía estado: ${courtesy.code} -> ${status} by=${req.user.id}`);
+    res.json(courtesy);
+  } catch {
+    res.status(400).json({ error: 'Error al actualizar código' });
   }
 });
 

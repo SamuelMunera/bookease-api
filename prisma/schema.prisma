@@ -430,3 +430,35 @@ model ScheduleException {
 
   professional Professional @relation(fields: [professionalId], references: [id])
 }
+
+enum PromoterStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum CourtesyCodeStatus {
+  UNUSED
+  USED
+}
+
+// Referral program: promoters get a personal referral code to share.
+model Promoter {
+  id        String         @id @default(cuid())
+  firstName String
+  lastName  String
+  email     String         @unique
+  phone     String?
+  code      String         @unique
+  status    PromoterStatus @default(ACTIVE)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+}
+
+// Referral program: single-use courtesy codes generated manually from admin.
+model CourtesyCode {
+  id        String             @id @default(cuid())
+  code      String             @unique
+  status    CourtesyCodeStatus @default(UNUSED)
+  usedAt    DateTime?
+  createdAt DateTime           @default(now())
+}
