@@ -15,8 +15,9 @@ router.get('/business/me', authenticate, requireRole('BUSINESS_OWNER'), async (r
     if (!biz) return res.status(404).json({ error: 'Negocio no encontrado' });
     const sub = await subscriptionService.getByBusiness(biz.id);
     if (!sub) return res.status(404).json({ error: 'Suscripción no encontrada' });
+    const { paymentSourceId, ...subPublic } = sub;
     res.json({
-      ...sub,
+      ...subPublic,
       billingState: subscriptionService.getBillingState(sub),
       trialDaysRemaining: subscriptionService.trialDaysRemaining(sub),
       businessStatus: biz.status,
@@ -94,8 +95,9 @@ router.get('/professional/me', authenticate, requireRole('PROFESSIONAL'), async 
     if (!pro) return res.status(404).json({ error: 'Perfil profesional no encontrado' });
     const sub = await subscriptionService.getByProfessional(pro.id);
     if (!sub) return res.status(404).json({ error: 'Suscripción no encontrada' });
+    const { paymentSourceId, ...subPublic } = sub;
     res.json({
-      ...sub,
+      ...subPublic,
       billingState: subscriptionService.getBillingState(sub),
       trialDaysRemaining: subscriptionService.trialDaysRemaining(sub),
     });

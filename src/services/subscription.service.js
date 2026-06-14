@@ -1,4 +1,6 @@
 const prisma = require('../config/database');
+const wompiService = require('./wompi.service');
+const { getPlanById } = require('../config/plans');
 
 const TRIAL_DAYS = 15;
 const PERIOD_DAYS = 30;
@@ -88,20 +90,62 @@ async function assertBillingActive(professionalId) {
 }
 
 // Marks a subscription as paid/active after a successful gateway payment
-// (Wompi transaction status === 'APPROVED'). Records activatedAt and
-// resets the billing period, then syncs the linked business's status.
-async function activate(subscriptionId, plan) {
+// (Wompi transaction status === 'APPROVED'). Records activatedAt, sets
+// billingPlan to the plan the client actually chose and paid for at
+// checkout, resets the billing period, and syncs the linked business's
+// status. If Wompi returned a payment_source_id (card saved), autoRenew
+// turns on — this is the ONLY place autoRenew can become true.
+async function activate(subscriptionId, plan, { paymentSourceId } = {}) {
   const sub = await prisma.subscription.update({
     where: { id: subscriptionId },
     data: {
       status: 'ACTIVE',
       plan,
+      billingPlan: plan,
       activatedAt: new Date(),
+      ...(paymentSourceId ? { paymentSourceId, autoRenew: true } : {}),
       ...periodDates(),
     },
   });
   await syncBusinessStatus(sub.businessId, sub);
   return sub;
+}
+
+// Attempts a recurring monthly charge against the saved payment_source.
+// Records the attempt as a Payment row (mirrors the initial-checkout flow)
+// and returns true only if Wompi approved it.
+async function chargeRenewal(sub) {
+  const planDef = getPlanById(sub.billingPlan, sub.country);
+  if (!planDef?.price) return false;
+
+  const amountInCents = Math.round(planDef.price * 100);
+  const reference = wompiService.generateReference();
+
+  let txn;
+  try {
+    txn = await wompiService.chargeRecurring({
+      paymentSourceId: sub.paymentSourceId,
+      amountInCents,
+      currency: planDef.currency,
+      reference,
+    });
+  } catch (err) {
+    console.error(`[subscription] renovación fallida sub=${sub.id}:`, err.message);
+    return false;
+  }
+
+  const VALID_STATUSES = ['PENDING', 'APPROVED', 'DECLINED', 'VOIDED', 'ERROR'];
+  const status = VALID_STATUSES.includes(txn.status) ? txn.status : 'ERROR';
+
+  await prisma.payment.create({
+    data: {
+      reference, businessId: sub.businessId, professionalId: sub.professionalId,
+      plan: sub.billingPlan, amountInCents, currency: planDef.currency,
+      status, wompiTransactionId: String(txn.id),
+    },
+  });
+
+  return status === 'APPROVED';
 }
 
 // `courtesy: true` creates a subscription that is already ACTIVE (no trial)
@@ -174,6 +218,13 @@ async function reactivate(subscriptionId) {
   });
 }
 
+// Called by cron when a billing period ends. Only subscriptions with
+// autoRenew + paymentSourceId (real card-on-file from a prior APPROVED
+// payment) get an actual recurring charge attempt. Everyone else — no
+// saved method, abandoned checkout, never paid — goes straight to
+// PAST_DUE, which is not isBillingActive and immediately makes the
+// business inactive (item 12/13: no indefinite "active" without a
+// successful real charge).
 async function renewDue() {
   const now = new Date();
   const due = await prisma.subscription.findMany({
@@ -184,21 +235,26 @@ async function renewDue() {
     },
   });
 
-  const results = await Promise.allSettled(
-    due.map(async sub => {
-      const updated = await prisma.subscription.update({
-        where: { id: sub.id },
-        data: {
-          status: 'ACTIVE',
-          ...periodDates(sub.currentPeriodEnd),
-        },
-      });
-      await syncBusinessStatus(updated.businessId, updated);
-      return updated;
-    })
-  );
+  let renewed = 0, markedPastDue = 0;
+  for (const sub of due) {
+    const canAutoCharge = sub.autoRenew && sub.paymentSourceId && sub.billingPlan;
+    const approved = canAutoCharge && await chargeRenewal(sub);
 
-  return { renewed: results.filter(r => r.status === 'fulfilled').length };
+    const updated = approved
+      ? await prisma.subscription.update({
+          where: { id: sub.id },
+          data: { status: 'ACTIVE', ...periodDates(sub.currentPeriodEnd) },
+        })
+      : await prisma.subscription.update({
+          where: { id: sub.id },
+          data: { status: 'PAST_DUE' },
+        });
+
+    await syncBusinessStatus(updated.businessId, updated);
+    approved ? renewed++ : markedPastDue++;
+  }
+
+  return { renewed, markedPastDue };
 }
 
 // Called by cron: cancel subscriptions past their period end with cancelAtPeriodEnd=true
@@ -215,7 +271,7 @@ async function cancelDue() {
     due.map(async sub => {
       const updated = await prisma.subscription.update({
         where: { id: sub.id },
-        data: { status: 'CANCELLED' },
+        data: { status: 'CANCELLED', autoRenew: false },
       });
       await syncBusinessStatus(updated.businessId, updated);
       return updated;
@@ -248,28 +304,33 @@ async function expireTrials() {
   return { expired: results.filter(r => r.status === 'fulfilled').length };
 }
 
+// Called by cron: PAST_DUE subscriptions that failed renewal and have had
+// GRACE_DAYS to fix payment without success move to EXPIRED. They were
+// already non-billing-active (and the business already INACTIVE) the
+// moment they hit PAST_DUE — this just stops renewDue from retrying them
+// forever and reflects the real lapsed state.
+const GRACE_DAYS = 5;
+
 async function markPastDue() {
-  const now = new Date();
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - GRACE_DAYS);
+
   const due = await prisma.subscription.findMany({
-    where: {
-      status: 'ACTIVE',
-      currentPeriodEnd: { lte: now },
-      cancelAtPeriodEnd: false,
-    },
+    where: { status: 'PAST_DUE', updatedAt: { lte: cutoff } },
   });
 
   const results = await Promise.allSettled(
     due.map(async sub => {
       const updated = await prisma.subscription.update({
         where: { id: sub.id },
-        data: { status: 'PAST_DUE' },
+        data: { status: 'EXPIRED', autoRenew: false },
       });
       await syncBusinessStatus(updated.businessId, updated);
       return updated;
     })
   );
 
-  return { markedPastDue: results.filter(r => r.status === 'fulfilled').length };
+  return { expiredAfterGrace: results.filter(r => r.status === 'fulfilled').length };
 }
 
 module.exports = {

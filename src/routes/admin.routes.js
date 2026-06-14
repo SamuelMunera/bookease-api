@@ -2,11 +2,6 @@ const crypto = require('crypto');
 const router = require('express').Router();
 const { authenticate, requireRole } = require('../middleware/auth');
 const prisma = require('../config/database');
-const { getPlanLimit } = require('../config/plans');
-const subscriptionService = require('../services/subscription.service');
-
-const VALID_PLANS = ['solo', 'team', 'studio', 'enterprise'];
-
 function generateCode(prefix) {
   const random = crypto.randomBytes(5).toString('hex').toUpperCase().slice(0, 8);
   return `${prefix}-${random}`;
@@ -109,62 +104,10 @@ router.get('/professionals', async (_req, res) => {
   }
 });
 
-// ── Plan management ──────────────────────────────────────────────────────────
-
-router.patch('/businesses/:id/plan', async (req, res) => {
-  try {
-    const { plan } = req.body;
-    if (!VALID_PLANS.includes(plan)) return res.status(400).json({ error: 'Plan inválido' });
-
-    const biz = await prisma.business.findUnique({
-      where: { id: req.params.id },
-      include: { professionals: { select: { id: true } } },
-    });
-    if (!biz) return res.status(404).json({ error: 'Negocio no encontrado' });
-
-    const updated = await prisma.business.update({ where: { id: req.params.id }, data: { plan } });
-
-    // Keep subscription in sync
-    const sub = await subscriptionService.getByBusiness(req.params.id);
-    if (sub) await subscriptionService.changePlan(sub.id, plan);
-
-    const newLimit   = getPlanLimit(plan);
-    const currentCount = biz.professionals.length;
-    const response   = { plan: updated.plan };
-
-    if (newLimit !== Infinity && currentCount > newLimit) {
-      response.downgradeWarning = `El negocio tiene ${currentCount} profesionales activos pero el plan "${plan}" permite ${newLimit}. Los profesionales existentes no fueron eliminados; nuevas vinculaciones quedarán bloqueadas hasta regularizar.`;
-    }
-
-    console.log(`[admin] plan cambio: business=${req.params.id} oldPlan=${biz.plan} newPlan=${plan} by=${req.user.id}`);
-    res.json(response);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
-router.patch('/professionals/:id/plan', async (req, res) => {
-  try {
-    const { plan } = req.body;
-    if (!VALID_PLANS.includes(plan)) return res.status(400).json({ error: 'Plan inválido' });
-
-    const pro = await prisma.professional.findUnique({ where: { id: req.params.id } });
-    if (!pro) return res.status(404).json({ error: 'Profesional no encontrado' });
-
-    const updated = await prisma.professional.update({ where: { id: req.params.id }, data: { plan } });
-
-    // Keep subscription in sync for solo professionals
-    const sub = await subscriptionService.getByProfessional(req.params.id);
-    if (sub) await subscriptionService.changePlan(sub.id, plan);
-
-    console.log(`[admin] plan cambio: professional=${req.params.id} oldPlan=${pro.plan} newPlan=${plan} by=${req.user.id}`);
-    res.json({ plan: updated.plan });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
 // ── Referral codes: Promotores ──────────────────────────────────────────────
+// El tipo de suscripción/plan NO se puede editar desde admin (ni por UI ni
+// por API): es de solo lectura aquí. El plan real solo cambia a través del
+// flujo de billing/checkout (ver payment.routes.js /wompi/webhook).
 
 router.get('/promoters', async (_req, res) => {
   try {

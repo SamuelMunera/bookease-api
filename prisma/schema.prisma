@@ -419,6 +419,14 @@ model Subscription {
   currentPeriodEnd      DateTime
   trialEndsAt           DateTime?
   activatedAt           DateTime?
+  // billingPlan: el plan realmente pagado/activado vía pasarela — null hasta
+  // el primer pago APPROVED. `plan` es el plan temporal/seleccionado (Equipo
+  // por defecto) y no implica cobro real.
+  billingPlan           String?
+  // autoRenew solo se activa cuando Wompi devuelve un payment_source_id
+  // reutilizable tras un pago APPROVED (tarjeta guardada).
+  autoRenew             Boolean            @default(false)
+  paymentSourceId       String?
   cancelAtPeriodEnd    Boolean            @default(false)
   stripeSubscriptionId String?
   businessId           String?            @unique

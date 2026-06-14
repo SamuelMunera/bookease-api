@@ -70,6 +70,8 @@ router.post('/wompi/checkout', authenticate, async (req, res) => {
       data: { reference, businessId, professionalId, plan, amountInCents, currency, promoterDiscountApplied },
     });
 
+    const customer = await prisma.user.findUnique({ where: { id: req.user.id }, select: { email: true } });
+
     res.json({
       reference,
       amountInCents,
@@ -79,6 +81,8 @@ router.post('/wompi/checkout', authenticate, async (req, res) => {
       publicKey: wompi.PUBLIC_KEY,
       checkoutUrl: wompi.CHECKOUT_URL,
       env: wompi.ENV,
+      customerEmail: customer?.email,
+      plan,
     });
   } catch (err) {
     res.status(400).json({ error: err.message || 'Error al iniciar el pago' });
@@ -120,13 +124,18 @@ router.post('/wompi/webhook', async (req, res) => {
     // DECLINED, VOIDED o ERROR dejan el negocio/profesional sin cambios
     // (sigue en su estado de billing actual: trial, payment_required, etc.)
     if (newStatus === 'APPROVED') {
+      // payment_source_id solo viene si el cliente aceptó guardar el método de
+      // pago en el widget de Wompi — es lo que habilita la auto-renovación
+      // mensual real (sin esto, la suscripción no se cobra automáticamente).
+      const paymentSourceId = txn.payment_source_id != null ? String(txn.payment_source_id) : undefined;
+
       if (payment.businessId) {
         const sub = await subscriptionService.getByBusiness(payment.businessId);
-        if (sub) await subscriptionService.activate(sub.id, payment.plan);
+        if (sub) await subscriptionService.activate(sub.id, payment.plan, { paymentSourceId });
         await prisma.business.update({ where: { id: payment.businessId }, data: { plan: payment.plan, paymentGateway: 'wompi' } });
       } else if (payment.professionalId) {
         const sub = await subscriptionService.getByProfessional(payment.professionalId);
-        if (sub) await subscriptionService.activate(sub.id, payment.plan);
+        if (sub) await subscriptionService.activate(sub.id, payment.plan, { paymentSourceId });
         await prisma.professional.update({ where: { id: payment.professionalId }, data: { plan: payment.plan } });
       }
 

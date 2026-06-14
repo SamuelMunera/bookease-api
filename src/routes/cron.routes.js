@@ -57,12 +57,13 @@ router.get('/reminders', async (req, res) => {
 router.get('/subscriptions', async (req, res) => {
   if (!cronAuth(req, res)) return;
   try {
-    const [trials, cancelled, renewed] = await Promise.all([
+    const [trials, cancelled, renewed, expiredPastDue] = await Promise.all([
       subscriptionService.expireTrials(),
       subscriptionService.cancelDue(),
       subscriptionService.renewDue(),
+      subscriptionService.markPastDue(),
     ]);
-    res.json({ ok: true, ...trials, ...cancelled, ...renewed });
+    res.json({ ok: true, ...trials, ...cancelled, ...renewed, ...expiredPastDue });
   } catch (err) {
     console.error('[cron] subscriptions:', err.message);
     res.status(500).json({ error: err.message });

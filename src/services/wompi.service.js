@@ -20,6 +20,37 @@ async function getTransaction(transactionId) {
   return body.data;
 }
 
+async function getAcceptanceToken() {
+  const res = await fetch(`${wompi.BASE_URL}/merchants/${wompi.PUBLIC_KEY}`);
+  if (!res.ok) throw new Error('No se pudo obtener el token de aceptación de Wompi');
+  const body = await res.json();
+  return body.data.presigned_acceptance.acceptance_token;
+}
+
+// Cobra un ciclo de renovación mensual usando un payment_source_id guardado
+// (tarjeta tokenizada en un pago previo APPROVED). Cobro server-to-server,
+// sin interacción del cliente — es lo que hace real la auto-renovación.
+async function chargeRecurring({ paymentSourceId, amountInCents, currency, reference }) {
+  const acceptanceToken = await getAcceptanceToken();
+  const res = await fetch(`${wompi.BASE_URL}/transactions`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${wompi.PRIVATE_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      acceptance_token: acceptanceToken,
+      amount_in_cents: amountInCents,
+      currency,
+      reference,
+      payment_source_id: paymentSourceId,
+    }),
+  });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body?.error?.reason || 'Error al cobrar la renovación en Wompi');
+  return body.data;
+}
+
 function getValueByPath(obj, path) {
   return path.split('.').reduce((acc, key) => (acc == null ? undefined : acc[key]), obj);
 }
@@ -34,4 +65,7 @@ function verifyWebhookSignature(body) {
   return expected === signature.checksum;
 }
 
-module.exports = { generateReference, buildIntegritySignature, getTransaction, verifyWebhookSignature };
+module.exports = {
+  generateReference, buildIntegritySignature, getTransaction, verifyWebhookSignature,
+  getAcceptanceToken, chargeRecurring,
+};
