@@ -18,15 +18,15 @@ const BASE_FEATURES = [
 
 const PLANS_BY_COUNTRY = {
   CO: [
-    { id: 'solo',       name: 'Independiente', tagline: 'Para profesionales que trabajan solos',  professionals: 1,    price: 49000,  currency: 'COP', priceLabel: '$49.000',  interval: 'mes', enterprise: false, forType: 'professional', features: ['1 profesional',          ...BASE_FEATURES] },
-    { id: 'team',       name: 'Equipo',        tagline: 'Para negocios con pequeño equipo',       professionals: 3,    price: 89000,  currency: 'COP', priceLabel: '$89.000',  interval: 'mes', enterprise: false, forType: 'business',      features: ['Hasta 3 profesionales',  ...BASE_FEATURES] },
-    { id: 'studio',     name: 'Estudio',       tagline: 'Para negocios en crecimiento',           professionals: 5,    price: 149000, currency: 'COP', priceLabel: '$149.000', interval: 'mes', enterprise: false, forType: 'business',      features: ['Hasta 5 profesionales',  ...BASE_FEATURES], popular: true },
+    { id: 'solo',       name: 'Independiente', tagline: 'Para profesionales que trabajan solos',  professionals: 1,    price: 30000,  currency: 'COP', priceLabel: '$30.000',  interval: 'mes', enterprise: false, forType: 'professional', features: ['1 profesional',          ...BASE_FEATURES] },
+    { id: 'team',       name: 'Equipo',        tagline: 'Para negocios con pequeño equipo',       professionals: 3,    price: 45000,  currency: 'COP', priceLabel: '$45.000',  interval: 'mes', enterprise: false, forType: 'business',      features: ['Hasta 3 profesionales',  ...BASE_FEATURES] },
+    { id: 'studio',     name: 'Estudio',       tagline: 'Para negocios en crecimiento',           professionals: 5,    price: 60000,  currency: 'COP', priceLabel: '$60.000',  interval: 'mes', enterprise: false, forType: 'business',      features: ['Hasta 5 profesionales',  ...BASE_FEATURES], popular: true },
     { id: 'enterprise', name: 'Empresarial',   tagline: 'Para cadenas y equipos grandes',         professionals: null, price: null,   currency: 'COP', priceLabel: 'A convenir', interval: null, enterprise: true,  forType: 'business',      features: ['6 o más profesionales', ...BASE_FEATURES, 'Soporte prioritario', 'Onboarding personalizado'] },
   ],
   US: [
-    { id: 'solo',       name: 'Independiente', tagline: 'Para profesionales que trabajan solos',  professionals: 1,    price: 14,  currency: 'USD', priceLabel: '$14', interval: 'mes', enterprise: false, forType: 'professional', features: ['1 profesional',          ...BASE_FEATURES] },
-    { id: 'team',       name: 'Equipo',        tagline: 'Para negocios con pequeño equipo',       professionals: 3,    price: 29,  currency: 'USD', priceLabel: '$29', interval: 'mes', enterprise: false, forType: 'business',      features: ['Hasta 3 profesionales',  ...BASE_FEATURES] },
-    { id: 'studio',     name: 'Estudio',       tagline: 'Para negocios en crecimiento',           professionals: 5,    price: 49,  currency: 'USD', priceLabel: '$49', interval: 'mes', enterprise: false, forType: 'business',      features: ['Hasta 5 profesionales',  ...BASE_FEATURES], popular: true },
+    { id: 'solo',       name: 'Independiente', tagline: 'Para profesionales que trabajan solos',  professionals: 1,    price: 15,  currency: 'USD', priceLabel: '$15', interval: 'mes', enterprise: false, forType: 'professional', features: ['1 profesional',          ...BASE_FEATURES] },
+    { id: 'team',       name: 'Equipo',        tagline: 'Para negocios con pequeño equipo',       professionals: 3,    price: 20,  currency: 'USD', priceLabel: '$20', interval: 'mes', enterprise: false, forType: 'business',      features: ['Hasta 3 profesionales',  ...BASE_FEATURES] },
+    { id: 'studio',     name: 'Estudio',       tagline: 'Para negocios en crecimiento',           professionals: 5,    price: 25,  currency: 'USD', priceLabel: '$25', interval: 'mes', enterprise: false, forType: 'business',      features: ['Hasta 5 profesionales',  ...BASE_FEATURES], popular: true },
     { id: 'enterprise', name: 'Empresarial',   tagline: 'Para cadenas y equipos grandes',         professionals: null, price: null, currency: 'USD', priceLabel: 'A convenir', interval: null, enterprise: true,  forType: 'business',      features: ['6 o más profesionales', ...BASE_FEATURES, 'Soporte prioritario', 'Onboarding personalizado'] },
   ],
 };
