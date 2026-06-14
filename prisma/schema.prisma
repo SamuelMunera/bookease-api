@@ -517,6 +517,12 @@ model PromoterConversion {
 model CourtesyCode {
   id        String             @id @default(cuid())
   code      String             @unique
+  // Referencia interna para el admin (ej. "Cortesía evento Medellín").
+  label     String?
+  // Plan que se regala al canjear este código. Se guarda al crearlo y se
+  // aplica tal cual al negocio/profesional que lo canjea — nunca depende
+  // del frontend.
+  plan      String             @default("team")
   status    CourtesyCodeStatus @default(UNUSED)
   usedAt    DateTime?
   createdAt DateTime           @default(now())

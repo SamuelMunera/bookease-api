@@ -119,7 +119,11 @@ async function create(ownerId, data) {
     });
 
     if (referral?.type === 'COURTESY') {
-      await referralService.redeemCourtesyCode(referral.courtesyCodeId, { businessId: biz.id }, tx);
+      // El plan regalado fue fijado por el admin al generar el código —
+      // se aplica tal cual al negocio, nunca el default ni uno elegido aquí.
+      const courtesyPlan = await referralService.redeemCourtesyCode(referral.courtesyCodeId, { businessId: biz.id }, tx);
+      await tx.business.update({ where: { id: biz.id }, data: { plan: courtesyPlan } });
+      biz.plan = courtesyPlan;
     }
 
     if (referral?.type === 'PROMOTER') {

@@ -28,8 +28,10 @@ async function resolveReferralCode(rawCode) {
 // Marks a courtesy code as redeemed by the given business/professional.
 // Accepts an optional Prisma transaction client so the redemption can be
 // committed atomically with the record that consumes the code.
+// Returns the plan that was selected when the code was generated, so the
+// caller can apply that exact plan to the redeemer.
 async function redeemCourtesyCode(courtesyCodeId, { businessId, professionalId }, client = prisma) {
-  await client.courtesyCode.update({
+  const courtesy = await client.courtesyCode.update({
     where: { id: courtesyCodeId },
     data: {
       status: 'USED',
@@ -39,6 +41,7 @@ async function redeemCourtesyCode(courtesyCodeId, { businessId, professionalId }
       redeemedProfessionalId: professionalId || null,
     },
   });
+  return courtesy.plan;
 }
 
 // Logs the use of a promoter code so it shows up immediately in the admin

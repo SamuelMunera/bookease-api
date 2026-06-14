@@ -68,7 +68,10 @@ async function registerProfessional({ name, email, password, phone, specialty, b
   }
 
   if (referral?.type === 'COURTESY' && user.professional) {
-    await referralService.redeemCourtesyCode(referral.courtesyCodeId, { professionalId: user.professional.id });
+    // El plan regalado fue fijado por el admin al generar el código — se
+    // aplica tal cual a la suscripción ya creada (TRIALING/'solo') de arriba.
+    const courtesyPlan = await referralService.redeemCourtesyCode(referral.courtesyCodeId, { professionalId: user.professional.id });
+    await subscriptionService.applyCourtesySubscription(user.professional.id, courtesyPlan);
   }
 
   if (referral?.type === 'PROMOTER' && user.professional) {

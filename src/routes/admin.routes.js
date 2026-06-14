@@ -2,6 +2,12 @@ const crypto = require('crypto');
 const router = require('express').Router();
 const { authenticate, requireRole } = require('../middleware/auth');
 const prisma = require('../config/database');
+const subscriptionService = require('../services/subscription.service');
+
+const VALID_COURTESY_PLANS = ['solo', 'team', 'studio', 'enterprise'];
+// Una suscripción activada hace menos de este tiempo se marca "Recién pagó".
+const RECENT_PAYMENT_HOURS = 48;
+
 function generateCode(prefix) {
   const random = crypto.randomBytes(5).toString('hex').toUpperCase().slice(0, 8);
   return `${prefix}-${random}`;
@@ -121,6 +127,7 @@ router.get('/promoters', async (_req, res) => {
           where: { businessId: null },
           select: { id: true, plan: true, subscription: { select: { status: true } } },
         },
+        conversions: { select: { status: true } },
       },
     });
 
@@ -132,15 +139,92 @@ router.get('/promoters', async (_req, res) => {
       for (const b of activeBusinesses) planBreakdown[b.plan] = (planBreakdown[b.plan] ?? 0) + 1;
       for (const pr of activeProfessionals) planBreakdown[pr.plan] = (planBreakdown[pr.plan] ?? 0) + 1;
 
-      const { businesses, professionals, ...rest } = p;
+      const { businesses, professionals, conversions, ...rest } = p;
       return {
         ...rest,
         businessesLinked: businesses.length,
         independentsLinked: professionals.length,
         activeCount: activeBusinesses.length + activeProfessionals.length,
+        paidConversions: conversions.filter(c => c.status === 'DISCOUNT_APPLIED').length,
         planBreakdown,
       };
     }));
+  } catch {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// KPIs generales del programa de referidos — para el overview de
+// admin/referral-codes (pestaña Conversiones).
+router.get('/referrals/stats', async (_req, res) => {
+  try {
+    const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const [totalPromoters, referredBusinesses, referredProfessionals, totalPaid, totalPending, recentConversions] = await Promise.all([
+      prisma.promoter.count(),
+      prisma.business.count({ where: { promoterId: { not: null } } }),
+      prisma.professional.count({ where: { promoterId: { not: null }, businessId: null } }),
+      prisma.promoterConversion.count({ where: { status: 'DISCOUNT_APPLIED' } }),
+      prisma.promoterConversion.count({ where: { status: 'PENDING_PAYMENT' } }),
+      prisma.promoterConversion.count({ where: { usedAt: { gte: since } } }),
+    ]);
+    res.json({
+      totalPromoters,
+      totalReferred: referredBusinesses + referredProfessionals,
+      totalPaid,
+      totalPending,
+      recentConversions,
+    });
+  } catch {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Detalle de un promotor: todos los negocios/independientes que entraron con
+// su código, con su estado actual y de pago. Es la vista 2 del flujo
+// promotores → detalle del admin de conversiones.
+router.get('/promoters/:id', async (req, res) => {
+  try {
+    const promoter = await prisma.promoter.findUnique({
+      where: { id: req.params.id },
+      include: {
+        businesses: {
+          orderBy: { createdAt: 'desc' },
+          include: { owner: { select: { email: true } }, subscription: true },
+        },
+        professionals: {
+          where: { businessId: null },
+          orderBy: { createdAt: 'desc' },
+          include: { user: { select: { email: true } }, subscription: true },
+        },
+      },
+    });
+    if (!promoter) return res.status(404).json({ error: 'Promotor no encontrado' });
+
+    const now = Date.now();
+    function mapEntity(entity, type, email) {
+      const sub = entity.subscription;
+      const entityActive = type === 'BUSINESS' ? entity.status === 'ACTIVE' : null;
+      return {
+        id: entity.id,
+        type,
+        name: entity.name,
+        email: email ?? null,
+        createdAt: entity.createdAt,
+        plan: entity.plan,
+        billingPlan: sub?.billingPlan ?? null,
+        currentStatus: subscriptionService.getDisplayState(sub, entityActive),
+        paymentStatus: sub?.billingPlan ? 'paid' : 'pending',
+        justPaid: !!(sub?.activatedAt && (now - new Date(sub.activatedAt).getTime()) < RECENT_PAYMENT_HOURS * 60 * 60 * 1000),
+      };
+    }
+
+    const items = [
+      ...promoter.businesses.map(b => mapEntity(b, 'BUSINESS', b.owner?.email)),
+      ...promoter.professionals.map(p => mapEntity(p, 'PROFESSIONAL', p.user?.email)),
+    ].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    const { businesses, professionals, ...promoterInfo } = promoter;
+    res.json({ promoter: promoterInfo, items });
   } catch {
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -186,39 +270,6 @@ router.patch('/promoters/:id/status', async (req, res) => {
   }
 });
 
-// Conversions: every time a promoter code is redeemed during registration,
-// shows who used it, when, and whether the first-month discount has been
-// applied to a real payment yet.
-router.get('/promoter-conversions', async (_req, res) => {
-  try {
-    const conversions = await prisma.promoterConversion.findMany({
-      orderBy: { usedAt: 'desc' },
-      include: {
-        promoter: { select: { firstName: true, lastName: true, code: true } },
-        business: { select: { id: true, name: true, plan: true } },
-        professional: { select: { id: true, name: true, plan: true } },
-      },
-    });
-
-    res.json(conversions.map(c => ({
-      id: c.id,
-      promoterId: c.promoterId,
-      promoterName: `${c.promoter.firstName} ${c.promoter.lastName}`,
-      promoterCode: c.promoterCode,
-      usedByType: c.usedByType,
-      usedByName: c.business?.name || c.professional?.name || '—',
-      usedByPlan: c.business?.plan || c.professional?.plan || null,
-      usedAt: c.usedAt,
-      discountType: c.discountType,
-      discountValue: c.discountValue,
-      discountDuration: c.discountDuration,
-      status: c.status,
-    })));
-  } catch {
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
 // ── Referral codes: Cortesías ───────────────────────────────────────────────
 
 router.get('/courtesy-codes', async (_req, res) => {
@@ -233,6 +284,8 @@ router.get('/courtesy-codes', async (_req, res) => {
     res.json(codes.map(c => ({
       id: c.id,
       code: c.code,
+      label: c.label,
+      plan: c.plan,
       status: c.status,
       createdAt: c.createdAt,
       usedAt: c.usedAt,
@@ -246,9 +299,15 @@ router.get('/courtesy-codes', async (_req, res) => {
 
 router.post('/courtesy-codes', async (req, res) => {
   try {
+    const { plan, label } = req.body;
+    if (!VALID_COURTESY_PLANS.includes(plan)) {
+      return res.status(400).json({ error: 'Plan inválido. Elige Independiente, Equipo, Estudio o Empresarial.' });
+    }
     const code = await generateUniqueCode('CORTESIA', 'courtesyCode');
-    const courtesy = await prisma.courtesyCode.create({ data: { code } });
-    console.log(`[admin] código de cortesía creado: ${courtesy.code} by=${req.user.id}`);
+    const courtesy = await prisma.courtesyCode.create({
+      data: { code, plan, label: label ? String(label).trim().slice(0, 100) : null },
+    });
+    console.log(`[admin] código de cortesía creado: ${courtesy.code} plan=${plan} by=${req.user.id}`);
     res.status(201).json(courtesy);
   } catch (err) {
     res.status(400).json({ error: err.message || 'Error al generar código' });

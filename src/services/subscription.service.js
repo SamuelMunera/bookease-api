@@ -36,6 +36,21 @@ function getBillingState(sub) {
   return 'no_subscription';
 }
 
+// Human-facing "current status" for admin views — splits the TRIALING
+// billingState into 'trial_active' vs 'trial_expired' (which getBillingState
+// collapses into 'payment_required'), and otherwise reflects whether the
+// entity is operational right now. Distinct from `getBillingState`, which
+// drives in-app billing gates.
+function getDisplayState(sub, entityActive) {
+  if (!sub) return 'registered';
+  const billingState = getBillingState(sub);
+  if (sub.status === 'TRIALING') {
+    return billingState === 'trial_active' ? 'trial_active' : 'trial_expired';
+  }
+  const active = entityActive != null ? entityActive : isBillingActive(billingState);
+  return active ? 'active' : 'inactive';
+}
+
 // Days left in the trial (0 if expired or not trialing).
 function trialDaysRemaining(sub) {
   if (!sub?.trialEndsAt) return 0;
@@ -159,6 +174,8 @@ async function createForBusiness(businessId, plan, country, { courtesy = false }
         plan,
         country,
         status: 'ACTIVE',
+        billingPlan: plan,
+        activatedAt: new Date(),
         trialEndsAt: null,
         ...periodDates(new Date(), COURTESY_PERIOD_DAYS),
       },
@@ -172,6 +189,25 @@ async function createForBusiness(businessId, plan, country, { courtesy = false }
       status: 'TRIALING',
       trialEndsAt: trialEndDate(),
       ...periodDates(),
+    },
+  });
+}
+
+// Applies a courtesy plan to a professional's existing subscription (created
+// at registration with the default 'solo' plan/TRIALING status). Mirrors the
+// `courtesy: true` branch of createForBusiness: marks it ACTIVE with the
+// gifted plan as both `plan` and `billingPlan`, no trial, no payment needed.
+async function applyCourtesySubscription(professionalId, plan, client = prisma) {
+  await client.professional.update({ where: { id: professionalId }, data: { plan } });
+  return client.subscription.update({
+    where: { professionalId },
+    data: {
+      plan,
+      billingPlan: plan,
+      status: 'ACTIVE',
+      activatedAt: new Date(),
+      trialEndsAt: null,
+      ...periodDates(new Date(), COURTESY_PERIOD_DAYS),
     },
   });
 }
@@ -352,4 +388,6 @@ module.exports = {
   deriveBusinessStatus,
   syncBusinessStatus,
   activate,
+  getDisplayState,
+  applyCourtesySubscription,
 };
