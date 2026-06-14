@@ -116,14 +116,17 @@ router.post('/wompi/webhook', async (req, res) => {
       data: { status: newStatus, wompiTransactionId: String(txn.id) },
     });
 
+    // Solo un estado APPROVED real de Wompi activa la suscripción. PENDING,
+    // DECLINED, VOIDED o ERROR dejan el negocio/profesional sin cambios
+    // (sigue en su estado de billing actual: trial, payment_required, etc.)
     if (newStatus === 'APPROVED') {
       if (payment.businessId) {
         const sub = await subscriptionService.getByBusiness(payment.businessId);
-        if (sub) await subscriptionService.changePlan(sub.id, payment.plan);
+        if (sub) await subscriptionService.activate(sub.id, payment.plan);
         await prisma.business.update({ where: { id: payment.businessId }, data: { plan: payment.plan, paymentGateway: 'wompi' } });
       } else if (payment.professionalId) {
         const sub = await subscriptionService.getByProfessional(payment.professionalId);
-        if (sub) await subscriptionService.changePlan(sub.id, payment.plan);
+        if (sub) await subscriptionService.activate(sub.id, payment.plan);
         await prisma.professional.update({ where: { id: payment.professionalId }, data: { plan: payment.plan } });
       }
 

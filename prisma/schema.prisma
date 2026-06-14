@@ -418,6 +418,7 @@ model Subscription {
   currentPeriodStart    DateTime
   currentPeriodEnd      DateTime
   trialEndsAt           DateTime?
+  activatedAt           DateTime?
   cancelAtPeriodEnd    Boolean            @default(false)
   stripeSubscriptionId String?
   businessId           String?            @unique

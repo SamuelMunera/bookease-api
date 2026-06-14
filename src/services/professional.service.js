@@ -59,10 +59,12 @@ async function registerProfessional({ name, email, password, phone, specialty, b
     expiresIn: process.env.JWT_EXPIRES_IN || '7d',
   });
 
-  // Solo professionals (no businessId) get their own subscription
+  // Solo professionals (no businessId) get their own subscription.
+  // Awaited: a professional must never exist without a TRIALING subscription,
+  // otherwise getBillingState() would treat them as payment_required immediately.
   if (!businessId && user.professional) {
     const proCountry = country || 'CO';
-    subscriptionService.createForProfessional(user.professional.id, 'solo', proCountry).catch(() => {});
+    await subscriptionService.createForProfessional(user.professional.id, 'solo', proCountry);
   }
 
   if (referral?.type === 'COURTESY' && user.professional) {

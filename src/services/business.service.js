@@ -129,6 +129,13 @@ async function create(ownerId, data) {
       );
     }
 
+    // Awaited inside the same transaction: a business must never exist
+    // without its subscription, otherwise it would briefly (or permanently,
+    // if this failed silently) look like it has no trial/payment at all.
+    await subscriptionService.createForBusiness(biz.id, biz.plan, biz.country, {
+      courtesy: biz.coveredByCourtesy,
+    }, tx);
+
     return biz;
   });
 
@@ -139,10 +146,6 @@ async function create(ownerId, data) {
   geocodeAddress(business.address, business.city).then(coords => {
     if (coords) prisma.business.update({ where: { id: business.id }, data: coords }).catch(() => {});
   });
-
-  subscriptionService.createForBusiness(business.id, business.plan, business.country, {
-    courtesy: business.coveredByCourtesy,
-  }).catch(() => {});
 
   const owner = await prisma.user.findUnique({ where: { id: ownerId }, select: { email: true } });
   if (owner) sendVerifyEmailFor(business.id, owner.email).catch(() => {});

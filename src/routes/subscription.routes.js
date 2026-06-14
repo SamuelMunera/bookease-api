@@ -11,7 +11,7 @@ const VALID_PRO_PLANS     = ['solo'];
 
 router.get('/business/me', authenticate, requireRole('BUSINESS_OWNER'), async (req, res) => {
   try {
-    const biz = await prisma.business.findFirst({ where: { ownerId: req.user.id }, select: { id: true } });
+    const biz = await prisma.business.findFirst({ where: { ownerId: req.user.id }, select: { id: true, status: true } });
     if (!biz) return res.status(404).json({ error: 'Negocio no encontrado' });
     const sub = await subscriptionService.getByBusiness(biz.id);
     if (!sub) return res.status(404).json({ error: 'Suscripción no encontrada' });
@@ -19,6 +19,7 @@ router.get('/business/me', authenticate, requireRole('BUSINESS_OWNER'), async (r
       ...sub,
       billingState: subscriptionService.getBillingState(sub),
       trialDaysRemaining: subscriptionService.trialDaysRemaining(sub),
+      businessStatus: biz.status,
     });
   } catch { res.status(500).json({ error: 'Internal server error' }); }
 });
