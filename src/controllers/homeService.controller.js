@@ -107,7 +107,7 @@ async function createHomeBooking(req, res) {
     });
     res.status(201).json(booking);
   } catch (err) {
-    const status = err.code === 'SLOT_CONFLICT' ? 409 : 400;
+    const status = err.code === 'SLOT_CONFLICT' ? 409 : err.code === 'PAYMENT_REQUIRED' ? 402 : 400;
     res.status(status).json({ error: err.message, code: err.code });
   }
 }

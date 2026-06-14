@@ -3,6 +3,7 @@ const { toMinutes, toTime, parseLocalDate, overlaps } = require('./slot.service'
 const { checkCoverage } = require('./homeService.service');
 const emailService = require('./email.service');
 const { retryOnConflict } = require('../utils/retry');
+const { assertBillingActive } = require('./subscription.service');
 
 const HOME_BOOKING_INCLUDE = {
   client: { select: { id: true, name: true, email: true, phone: true } },
@@ -11,6 +12,8 @@ const HOME_BOOKING_INCLUDE = {
 };
 
 async function createHomeBooking({ clientId, professionalId, homeServiceId, date, startTime, clientAddress, clientCity }) {
+  await assertBillingActive(professionalId);
+
   const localDate = parseLocalDate(date);
   const now = new Date();
   const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));

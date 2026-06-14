@@ -15,7 +15,11 @@ router.get('/business/me', authenticate, requireRole('BUSINESS_OWNER'), async (r
     if (!biz) return res.status(404).json({ error: 'Negocio no encontrado' });
     const sub = await subscriptionService.getByBusiness(biz.id);
     if (!sub) return res.status(404).json({ error: 'Suscripción no encontrada' });
-    res.json(sub);
+    res.json({
+      ...sub,
+      billingState: subscriptionService.getBillingState(sub),
+      trialDaysRemaining: subscriptionService.trialDaysRemaining(sub),
+    });
   } catch { res.status(500).json({ error: 'Internal server error' }); }
 });
 
@@ -89,7 +93,11 @@ router.get('/professional/me', authenticate, requireRole('PROFESSIONAL'), async 
     if (!pro) return res.status(404).json({ error: 'Perfil profesional no encontrado' });
     const sub = await subscriptionService.getByProfessional(pro.id);
     if (!sub) return res.status(404).json({ error: 'Suscripción no encontrada' });
-    res.json(sub);
+    res.json({
+      ...sub,
+      billingState: subscriptionService.getBillingState(sub),
+      trialDaysRemaining: subscriptionService.trialDaysRemaining(sub),
+    });
   } catch { res.status(500).json({ error: 'Internal server error' }); }
 });
 

@@ -3,6 +3,7 @@ const { toMinutes, toTime, parseLocalDate, overlaps } = require('./slot.service'
 const emailService = require('./email.service');
 const { bookingToUTCMs } = require('../utils/timezone');
 const { retryOnConflict } = require('../utils/retry');
+const { assertBillingActive } = require('./subscription.service');
 
 const BOOKING_INCLUDE = {
   client: { select: { id: true, name: true, email: true, phone: true } },
@@ -26,6 +27,8 @@ async function getEffectiveTiming(tx, professionalId, serviceId) {
 }
 
 async function createBooking({ clientId, professionalId, serviceId, date, startTime }) {
+  await assertBillingActive(professionalId);
+
   const localDate = parseLocalDate(date);
   const now = new Date();
   const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
@@ -326,6 +329,7 @@ const VALID_SOURCES = new Set(['ONLINE', 'MANUAL', 'WHATSAPP', 'CALL', 'PRESENCI
 async function createManualBooking({ creatorId, creatorRole, professionalId, serviceId, date, startTime, clientEmail, clientName, clientPhone, source }) {
   if (!professionalId || !serviceId || !date || !startTime)
     throw new Error('professionalId, serviceId, date y startTime son obligatorios');
+  await assertBillingActive(professionalId);
   if (!clientEmail && !clientName)
     throw new Error('Proporciona el email o nombre del cliente');
   if (clientEmail && !EMAIL_RE.test(clientEmail.trim()))

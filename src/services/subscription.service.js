@@ -1,6 +1,6 @@
 const prisma = require('../config/database');
 
-const TRIAL_DAYS = 14;
+const TRIAL_DAYS = 15;
 const PERIOD_DAYS = 30;
 // Courtesy subscriptions get a 100-year period so renewal/expiration crons
 // never touch them — effectively free forever.
@@ -17,6 +17,49 @@ function trialEndDate(fromDate = new Date()) {
   const d = new Date(fromDate);
   d.setDate(d.getDate() + TRIAL_DAYS);
   return d;
+}
+
+// Maps the raw SubscriptionStatus + trialEndsAt to the billing state the
+// product surfaces to the user. Computed live (not just from `status`) so
+// the frontend reflects reality even before the expiration cron has run.
+function getBillingState(sub) {
+  if (!sub) return 'no_subscription';
+  if (sub.status === 'CANCELLED') return 'cancelled';
+  if (sub.status === 'PAST_DUE') return 'past_due';
+  if (sub.status === 'ACTIVE') return 'active_paid';
+  if (sub.status === 'EXPIRED') return 'payment_required';
+  if (sub.status === 'TRIALING') {
+    return sub.trialEndsAt && sub.trialEndsAt <= new Date() ? 'payment_required' : 'trial_active';
+  }
+  return 'no_subscription';
+}
+
+// Days left in the trial (0 if expired or not trialing).
+function trialDaysRemaining(sub) {
+  if (!sub?.trialEndsAt) return 0;
+  const ms = new Date(sub.trialEndsAt).getTime() - Date.now();
+  return Math.max(0, Math.ceil(ms / (24 * 60 * 60 * 1000)));
+}
+
+// Throws PAYMENT_REQUIRED when the business/professional behind this
+// professional no longer has an active trial or paid subscription —
+// used to stop new bookings from landing on accounts that owe payment.
+async function assertBillingActive(professionalId) {
+  const pro = await prisma.professional.findUnique({
+    where: { id: professionalId },
+    select: {
+      businessId: true,
+      subscription: true,
+      business: { select: { subscription: true } },
+    },
+  });
+  if (!pro) return;
+  const sub = pro.businessId ? pro.business?.subscription : pro.subscription;
+  if (getBillingState(sub) === 'payment_required') {
+    const err = new Error('Este negocio no puede recibir nuevas reservas: el periodo de prueba terminó. Pídele al propietario que agregue un método de pago.');
+    err.code = 'PAYMENT_REQUIRED';
+    throw err;
+  }
 }
 
 // `courtesy: true` creates a subscription that is already ACTIVE (no trial)
@@ -164,4 +207,7 @@ module.exports = {
   cancelDue,
   expireTrials,
   markPastDue,
+  getBillingState,
+  trialDaysRemaining,
+  assertBillingActive,
 };
