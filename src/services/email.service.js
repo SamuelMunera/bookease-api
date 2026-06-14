@@ -85,7 +85,7 @@ function confirmHtml({ to, name, service, date, startTime, endTime, proOrClient,
 
   return layout(`
     <div class="header">
-      <div class="logo">Book<span>ease</span></div>
+      <div class="logo">Slot<span>ly</span></div>
     </div>
     <div class="body">
       <span class="badge badge-confirmed">Confirmada</span>
@@ -115,7 +115,7 @@ function cancelHtml({ to, name, service, date, startTime, proOrClient }) {
 
   return layout(`
     <div class="header">
-      <div class="logo">Book<span>ease</span></div>
+      <div class="logo">Slot<span>ly</span></div>
     </div>
     <div class="body">
       <span class="badge badge-cancelled">Cancelada</span>
@@ -141,7 +141,7 @@ function reminderHtml({ name, service, date, startTime, endTime, proOrClient, is
 
   return layout(`
     <div class="header">
-      <div class="logo">Book<span>ease</span></div>
+      <div class="logo">Slot<span>ly</span></div>
     </div>
     <div class="body">
       <span class="badge badge-reminder">Recordatorio — mañana</span>
