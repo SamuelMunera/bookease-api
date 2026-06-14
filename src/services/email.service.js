@@ -154,6 +154,39 @@ function reminderHtml({ name, service, date, startTime, endTime, proOrClient, is
   `);
 }
 
+/* ── Feedback / PQRS ──────────────────────────────────────── */
+const FEEDBACK_EMAIL = process.env.FEEDBACK_EMAIL || 'slotly22@gmail.com';
+
+function feedbackHtml({ type, description, page, userEmail }) {
+  const rows = [
+    ['Tipo',          escHtml(type)],
+    ['Página',        escHtml(page || '—')],
+    ['Email usuario', escHtml(userEmail || '—')],
+  ];
+
+  return layout(`
+    <div class="header">
+      <div class="logo">Slot<span>ly</span></div>
+    </div>
+    <div class="body">
+      <h1 class="title">Nuevo feedback / PQRS</h1>
+      <table class="detail-table">${rows.map(([l,v]) => `<tr><td class="label">${l}</td><td class="value">${v}</td></tr>`).join('')}</table>
+      <p class="sub" style="white-space:pre-wrap;color:#E0E0F0">${escHtml(description)}</p>
+    </div>
+    <div class="footer">Slotly · Notificación interna de feedback.</div>
+  `);
+}
+
+async function sendFeedbackNotification(report) {
+  await sendOne({
+    bookingId: report.id,
+    kind: 'feedback',
+    recipient: FEEDBACK_EMAIL,
+    subject: `Nuevo feedback (${report.type}) – Slotly`,
+    html: feedbackHtml(report),
+  });
+}
+
 /* ── Send helpers ─────────────────────────────────────────── */
 
 /**
@@ -250,4 +283,4 @@ async function sendBookingReminder(booking) {
   await runBatch('reminder', booking.id, jobs);
 }
 
-module.exports = { sendBookingConfirmation, sendBookingCancellation, sendBookingReminder };
+module.exports = { sendBookingConfirmation, sendBookingCancellation, sendBookingReminder, sendFeedbackNotification };
