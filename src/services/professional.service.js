@@ -69,6 +69,12 @@ async function registerProfessional({ name, email, password, phone, specialty, b
     await referralService.redeemCourtesyCode(referral.courtesyCodeId, { professionalId: user.professional.id });
   }
 
+  if (referral?.type === 'PROMOTER' && user.professional) {
+    await referralService.recordPromoterConversion({
+      promoterId: referral.promoterId, promoterCode: referral.promoterCode, professionalId: user.professional.id,
+    });
+  }
+
   return { user, token };
 }
 

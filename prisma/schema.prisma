@@ -114,6 +114,7 @@ model Business {
   promoter          Promoter?     @relation("PromoterBusinesses", fields: [promoterId], references: [id])
   redeemedCourtesy  CourtesyCode?
   payments          Payment[]
+  promoterConversion PromoterConversion?
 }
 
 model Professional {
@@ -160,6 +161,7 @@ model Professional {
   promoter           Promoter?     @relation("PromoterProfessionals", fields: [promoterId], references: [id])
   redeemedCourtesy   CourtesyCode?
   payments           Payment[]
+  promoterConversion PromoterConversion?
 }
 
 model ProfessionalPhoto {
@@ -469,6 +471,35 @@ model Promoter {
 
   businesses    Business[]     @relation("PromoterBusinesses")
   professionals Professional[] @relation("PromoterProfessionals")
+  conversions   PromoterConversion[]
+}
+
+enum PromoterConversionStatus {
+  PENDING_PAYMENT
+  DISCOUNT_APPLIED
+}
+
+// Logs each time a promoter code is used to register a business or
+// professional, so admin can track attribution and the resulting
+// first-month discount in real time.
+model PromoterConversion {
+  id               String                   @id @default(cuid())
+  promoterId       String
+  promoterCode     String
+  usedByType       ReferralRedeemerType
+  businessId       String?                  @unique
+  professionalId   String?                  @unique
+  usedAt           DateTime                 @default(now())
+  discountType     String                   @default("PERCENT")
+  discountValue    Int                      @default(10)
+  discountDuration String                   @default("FIRST_MONTH")
+  status           PromoterConversionStatus @default(PENDING_PAYMENT)
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+
+  promoter     Promoter      @relation(fields: [promoterId], references: [id])
+  business     Business?     @relation(fields: [businessId], references: [id])
+  professional Professional? @relation(fields: [professionalId], references: [id])
 }
 
 // Referral program: single-use courtesy codes generated manually from admin.
@@ -507,6 +538,7 @@ model Payment {
   currency           String
   status             PaymentStatus @default(PENDING)
   wompiTransactionId String?
+  promoterDiscountApplied Boolean  @default(false)
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
 

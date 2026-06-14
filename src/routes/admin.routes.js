@@ -243,6 +243,39 @@ router.patch('/promoters/:id/status', async (req, res) => {
   }
 });
 
+// Conversions: every time a promoter code is redeemed during registration,
+// shows who used it, when, and whether the first-month discount has been
+// applied to a real payment yet.
+router.get('/promoter-conversions', async (_req, res) => {
+  try {
+    const conversions = await prisma.promoterConversion.findMany({
+      orderBy: { usedAt: 'desc' },
+      include: {
+        promoter: { select: { firstName: true, lastName: true, code: true } },
+        business: { select: { id: true, name: true, plan: true } },
+        professional: { select: { id: true, name: true, plan: true } },
+      },
+    });
+
+    res.json(conversions.map(c => ({
+      id: c.id,
+      promoterId: c.promoterId,
+      promoterName: `${c.promoter.firstName} ${c.promoter.lastName}`,
+      promoterCode: c.promoterCode,
+      usedByType: c.usedByType,
+      usedByName: c.business?.name || c.professional?.name || '—',
+      usedByPlan: c.business?.plan || c.professional?.plan || null,
+      usedAt: c.usedAt,
+      discountType: c.discountType,
+      discountValue: c.discountValue,
+      discountDuration: c.discountDuration,
+      status: c.status,
+    })));
+  } catch {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ── Referral codes: Cortesías ───────────────────────────────────────────────
 
 router.get('/courtesy-codes', async (_req, res) => {

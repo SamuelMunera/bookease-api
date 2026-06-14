@@ -46,13 +46,28 @@ router.post('/wompi/checkout', authenticate, async (req, res) => {
     const planDef = getPlanById(plan, country);
     if (!planDef || !planDef.price) return res.status(400).json({ error: 'Este plan no admite pago en línea' });
 
-    const amountInCents = Math.round(planDef.price * 100);
+    let amountInCents = Math.round(planDef.price * 100);
     const currency = planDef.currency;
+
+    // First-month promoter discount: 10% off the very first payment if this
+    // entity registered with a promoter code and hasn't redeemed it yet.
+    const conversion = await prisma.promoterConversion.findFirst({
+      where: {
+        status: 'PENDING_PAYMENT',
+        ...(businessId ? { businessId } : { professionalId }),
+      },
+    });
+    let promoterDiscountApplied = false;
+    if (conversion && conversion.discountType === 'PERCENT') {
+      amountInCents = Math.round(amountInCents * (1 - conversion.discountValue / 100));
+      promoterDiscountApplied = true;
+    }
+
     const reference = wompiService.generateReference();
     const signature = wompiService.buildIntegritySignature({ reference, amountInCents, currency });
 
     await prisma.payment.create({
-      data: { reference, businessId, professionalId, plan, amountInCents, currency },
+      data: { reference, businessId, professionalId, plan, amountInCents, currency, promoterDiscountApplied },
     });
 
     res.json({
@@ -60,6 +75,7 @@ router.post('/wompi/checkout', authenticate, async (req, res) => {
       amountInCents,
       currency,
       signature,
+      promoterDiscountApplied,
       publicKey: wompi.PUBLIC_KEY,
       checkoutUrl: wompi.CHECKOUT_URL,
       env: wompi.ENV,
@@ -109,6 +125,16 @@ router.post('/wompi/webhook', async (req, res) => {
         const sub = await subscriptionService.getByProfessional(payment.professionalId);
         if (sub) await subscriptionService.changePlan(sub.id, payment.plan);
         await prisma.professional.update({ where: { id: payment.professionalId }, data: { plan: payment.plan } });
+      }
+
+      if (payment.promoterDiscountApplied) {
+        await prisma.promoterConversion.updateMany({
+          where: {
+            status: 'PENDING_PAYMENT',
+            ...(payment.businessId ? { businessId: payment.businessId } : { professionalId: payment.professionalId }),
+          },
+          data: { status: 'DISCOUNT_APPLIED' },
+        });
       }
     }
 

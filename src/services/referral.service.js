@@ -12,7 +12,7 @@ async function resolveReferralCode(rawCode) {
     const promoter = await prisma.promoter.findUnique({ where: { code } });
     if (!promoter) throw new Error('El código de promotor no existe');
     if (promoter.status !== 'ACTIVE') throw new Error('Este código de promotor ya no está activo');
-    return { type: 'PROMOTER', promoterId: promoter.id };
+    return { type: 'PROMOTER', promoterId: promoter.id, promoterCode: promoter.code };
   }
 
   if (code.startsWith('CORTESIA-')) {
@@ -41,4 +41,19 @@ async function redeemCourtesyCode(courtesyCodeId, { businessId, professionalId }
   });
 }
 
-module.exports = { resolveReferralCode, redeemCourtesyCode };
+// Logs the use of a promoter code so it shows up immediately in the admin
+// conversions list and carries the first-month-discount entitlement that
+// the checkout flow will later apply and mark as redeemed.
+async function recordPromoterConversion({ promoterId, promoterCode, businessId, professionalId }, client = prisma) {
+  await client.promoterConversion.create({
+    data: {
+      promoterId,
+      promoterCode,
+      usedByType: businessId ? 'BUSINESS' : 'PROFESSIONAL',
+      businessId: businessId || null,
+      professionalId: professionalId || null,
+    },
+  });
+}
+
+module.exports = { resolveReferralCode, redeemCourtesyCode, recordPromoterConversion };

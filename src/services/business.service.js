@@ -121,6 +121,13 @@ async function create(ownerId, data) {
       await referralService.redeemCourtesyCode(referral.courtesyCodeId, { businessId: biz.id }, tx);
     }
 
+    if (referral?.type === 'PROMOTER') {
+      await referralService.recordPromoterConversion(
+        { promoterId: referral.promoterId, promoterCode: referral.promoterCode, businessId: biz.id },
+        tx,
+      );
+    }
+
     return biz;
   });
 
