@@ -2,11 +2,14 @@ const prisma = require('../config/database');
 
 const TRIAL_DAYS = 14;
 const PERIOD_DAYS = 30;
+// Courtesy subscriptions get a 100-year period so renewal/expiration crons
+// never touch them — effectively free forever.
+const COURTESY_PERIOD_DAYS = 365 * 100;
 
-function periodDates(fromDate = new Date()) {
+function periodDates(fromDate = new Date(), days = PERIOD_DAYS) {
   const start = new Date(fromDate);
   const end   = new Date(fromDate);
-  end.setDate(end.getDate() + PERIOD_DAYS);
+  end.setDate(end.getDate() + days);
   return { currentPeriodStart: start, currentPeriodEnd: end };
 }
 
@@ -16,7 +19,22 @@ function trialEndDate(fromDate = new Date()) {
   return d;
 }
 
-async function createForBusiness(businessId, plan, country) {
+// `courtesy: true` creates a subscription that is already ACTIVE (no trial)
+// with a period far in the future, so the renewal/expiration crons never
+// flag it as due and it never requires payment.
+async function createForBusiness(businessId, plan, country, { courtesy = false } = {}) {
+  if (courtesy) {
+    return prisma.subscription.create({
+      data: {
+        businessId,
+        plan,
+        country,
+        status: 'ACTIVE',
+        trialEndsAt: null,
+        ...periodDates(new Date(), COURTESY_PERIOD_DAYS),
+      },
+    });
+  }
   return prisma.subscription.create({
     data: {
       businessId,

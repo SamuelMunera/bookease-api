@@ -28,8 +28,9 @@ router.post('/wompi/checkout', authenticate, async (req, res) => {
 
     if (req.user.role === 'BUSINESS_OWNER') {
       if (!VALID_BUSINESS_PLANS.includes(plan)) return res.status(400).json({ error: 'Plan inválido para negocio' });
-      const biz = await prisma.business.findFirst({ where: { ownerId: req.user.id }, select: { id: true, country: true } });
+      const biz = await prisma.business.findFirst({ where: { ownerId: req.user.id }, select: { id: true, country: true, coveredByCourtesy: true } });
       if (!biz) return res.status(404).json({ error: 'Negocio no encontrado' });
+      if (biz.coveredByCourtesy) return res.status(400).json({ error: 'Este negocio está cubierto por un código de cortesía y no requiere pago.' });
       businessId = biz.id;
       country = biz.country;
     } else if (req.user.role === 'PROFESSIONAL') {

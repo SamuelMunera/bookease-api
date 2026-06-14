@@ -113,6 +113,7 @@ async function create(ownerId, data) {
       data: {
         ...clean, ownerId, nameNorm, phoneNorm, addressNorm, status: 'ACTIVE',
         ...(referral?.type === 'PROMOTER' ? { promoterId: referral.promoterId } : {}),
+        ...(referral?.type === 'COURTESY' ? { coveredByCourtesy: true } : {}),
       },
     });
 
@@ -131,7 +132,9 @@ async function create(ownerId, data) {
     if (coords) prisma.business.update({ where: { id: business.id }, data: coords }).catch(() => {});
   });
 
-  subscriptionService.createForBusiness(business.id, business.plan, business.country).catch(() => {});
+  subscriptionService.createForBusiness(business.id, business.plan, business.country, {
+    courtesy: business.coveredByCourtesy,
+  }).catch(() => {});
 
   const owner = await prisma.user.findUnique({ where: { id: ownerId }, select: { email: true } });
   if (owner) sendVerifyEmailFor(business.id, owner.email).catch(() => {});

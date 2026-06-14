@@ -95,6 +95,7 @@ model Business {
   plan               String   @default("team")
   paymentGateway     String?
   stripeCustomerId   String?
+  coveredByCourtesy  Boolean  @default(false)
   emailVerifyToken   String?   @unique
   emailVerifyExpiry  DateTime?
   nameNorm           String?
