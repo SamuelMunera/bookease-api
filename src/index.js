@@ -34,6 +34,10 @@ if (process.env.NODE_ENV === 'production') app.set('trust proxy', 1);
 // Security headers
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
+  // 'same-origin' (helmet's default) breaks `window.closed`/postMessage
+  // checks on OAuth popups (Google login). 'same-origin-allow-popups'
+  // keeps the isolation benefits while letting popup windows communicate.
+  crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
   contentSecurityPolicy: false, // handled by client (Vite/Vercel)
   hsts: process.env.NODE_ENV === 'production'
     ? { maxAge: 31536000, includeSubDomains: true, preload: true }
