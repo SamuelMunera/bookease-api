@@ -27,9 +27,10 @@ const PUBLIC_BUSINESS_SELECT = {
   },
 };
 
+// country se fija en el registro y no puede modificarse desde ningún endpoint de edición.
 const BUSINESS_EDITABLE = [
   'name', 'description', 'address', 'city', 'phone', 'category',
-  'country', 'timezone', 'state', 'zipCode', 'cancelMinHours',
+  'timezone', 'state', 'zipCode', 'cancelMinHours',
 ];
 
 function buildNorms(data) {
@@ -307,16 +308,17 @@ async function updateProfile(ownerId, data) {
   const business = await prisma.business.findFirst({ where: { ownerId } });
   if (!business) throw new Error('Negocio no encontrado');
 
+  // country se fija en el registro y no puede modificarse desde el perfil.
   const allowed = [
     'name', 'description', 'address', 'city', 'phone', 'category', 'logoUrl',
-    'cancelMinHours', 'country', 'timezone', 'state', 'zipCode',
+    'cancelMinHours', 'timezone', 'state', 'zipCode',
   ];
   const clean = Object.fromEntries(Object.entries(data).filter(([k]) => allowed.includes(k)));
 
   // Address validation when address-related fields change
-  if (clean.address || clean.city || clean.country || clean.state || clean.zipCode) {
+  if (clean.address || clean.city || clean.state || clean.zipCode) {
     const merged = {
-      country:  clean.country  || business.country,
+      country:  business.country,
       address:  clean.address  || business.address,
       city:     clean.city     || business.city,
       state:    clean.state    || business.state,

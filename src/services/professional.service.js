@@ -356,7 +356,8 @@ async function updateBufferTime(userId, bufferTime) {
 async function updateProfile(userId, data) {
   const prof = await prisma.professional.findUnique({ where: { userId } });
   if (!prof) throw new Error('Professional profile not found');
-  const allowed = ['name', 'bio', 'phone', 'specialty', 'experience', 'avatarUrl', 'country', 'timezone', 'state', 'zipCode'];
+  // country se fija en el registro y no puede modificarse desde el perfil.
+  const allowed = ['name', 'bio', 'phone', 'specialty', 'experience', 'avatarUrl', 'timezone', 'state', 'zipCode'];
   const clean = Object.fromEntries(Object.entries(data).filter(([k]) => allowed.includes(k)));
   return prisma.professional.update({ where: { id: prof.id }, data: clean });
 }
