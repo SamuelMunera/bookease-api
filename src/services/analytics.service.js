@@ -1,9 +1,9 @@
 const prisma = require('../config/database');
 
 const DAYS_ES = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
-const REVENUE_STATUSES = new Set(['CONFIRMED', 'COMPLETED']);
-// CANCELLED excluded: must not inflate client counts, peak hours/days or service booking counts
-const COUNT_STATUSES   = new Set(['CONFIRMED', 'COMPLETED', 'NO_SHOW']);
+// Only COMPLETED counts as real revenue and real activity (CONFIRMED = future, not yet performed)
+const REVENUE_STATUSES = new Set(['COMPLETED']);
+const COUNT_STATUSES   = new Set(['COMPLETED', 'NO_SHOW']);
 
 function localToday(timezone) {
   const str = new Date().toLocaleString('en-CA', { timeZone: timezone });

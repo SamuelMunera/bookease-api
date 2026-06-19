@@ -31,7 +31,7 @@ async function getBusinessRevenue(ownerId) {
   const bookings = await prisma.booking.findMany({
     where: {
       professional: { businessId: business.id },
-      status: { in: ['CONFIRMED', 'COMPLETED'] },
+      status: 'COMPLETED',
       date: { gte: monthStart, lt: monthEnd },
     },
     include: {
@@ -75,7 +75,7 @@ async function getProfessionalRevenue(userId) {
   const bookings = await prisma.booking.findMany({
     where: {
       professionalId: prof.id,
-      status: { in: ['CONFIRMED', 'COMPLETED'] },
+      status: 'COMPLETED',
       date: { gte: monthStart, lt: monthEnd },
     },
     include: {
