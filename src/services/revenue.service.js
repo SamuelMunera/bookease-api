@@ -31,11 +31,12 @@ async function getBusinessRevenue(ownerId) {
   const bookings = await prisma.booking.findMany({
     where: {
       professional: { businessId: business.id },
-      status: 'CONFIRMED',
+      status: { in: ['CONFIRMED', 'COMPLETED'] },
       date: { gte: monthStart, lt: monthEnd },
     },
     include: {
-      service: { select: { price: true } },
+      service:      { select: { price: true } },
+      homeService:  { select: { price: true, surcharge: true } },
       professional: { select: { id: true, name: true } },
     },
   });
@@ -44,7 +45,8 @@ async function getBusinessRevenue(ownerId) {
   for (const b of bookings) {
     const pid = b.professional.id;
     if (!proMap[pid]) proMap[pid] = { id: pid, name: b.professional.name, day: 0, week: 0, month: 0 };
-    const price = Number(b.service.price);
+    const price = Number(b.service?.price ?? b.homeService?.price ?? 0)
+                + Number(b.homeService?.surcharge ?? 0);
     proMap[pid].month += price;
     if (b.date >= weekStart && b.date < weekEnd)  proMap[pid].week += price;
     if (b.date >= dayStart  && b.date < dayEnd)   proMap[pid].day  += price;
@@ -73,15 +75,19 @@ async function getProfessionalRevenue(userId) {
   const bookings = await prisma.booking.findMany({
     where: {
       professionalId: prof.id,
-      status: 'CONFIRMED',
+      status: { in: ['CONFIRMED', 'COMPLETED'] },
       date: { gte: monthStart, lt: monthEnd },
     },
-    include: { service: { select: { price: true } } },
+    include: {
+      service:     { select: { price: true } },
+      homeService: { select: { price: true, surcharge: true } },
+    },
   });
 
   let day = 0, week = 0, month = 0;
   for (const b of bookings) {
-    const price = Number(b.service.price);
+    const price = Number(b.service?.price ?? b.homeService?.price ?? 0)
+                + Number(b.homeService?.surcharge ?? 0);
     month += price;
     if (b.date >= weekStart && b.date < weekEnd)  week += price;
     if (b.date >= dayStart  && b.date < dayEnd)   day  += price;
