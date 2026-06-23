@@ -216,6 +216,25 @@ async function applyCourtesySubscription(professionalId, plan, client = prisma) 
   });
 }
 
+// Grants a free billing month at checkout time (referral reward, etapa 1):
+// activa la suscripción 30 días con el plan elegido, sin cobro ni pasarela.
+// El caller incrementa freeMonthsUsed.
+async function applyFreeMonth(subscriptionId, plan, tx = prisma) {
+  const sub = await tx.subscription.update({
+    where: { id: subscriptionId },
+    data: {
+      status: 'ACTIVE',
+      plan,
+      billingPlan: plan,
+      activatedAt: new Date(),
+      trialEndsAt: null,
+      ...periodDates(),
+    },
+  });
+  await syncBusinessStatus(sub.businessId, sub, tx);
+  return sub;
+}
+
 async function createForProfessional(professionalId, plan, country, tx = prisma) {
   return tx.subscription.create({
     data: {
@@ -432,4 +451,5 @@ module.exports = {
   activate,
   getDisplayState,
   applyCourtesySubscription,
+  applyFreeMonth,
 };

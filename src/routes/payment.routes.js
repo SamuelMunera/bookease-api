@@ -47,6 +47,27 @@ router.post('/wompi/checkout', authenticate, async (req, res) => {
     const planDef = getPlanById(plan, country);
     if (!planDef || !planDef.price) return res.status(400).json({ error: 'Este plan no admite pago en línea' });
 
+    // Mes gratis del referidor (etapa 1): si el negocio tiene meses gratis
+    // disponibles, esta suscripción se activa 30 días GRATIS sin pasar por la
+    // pasarela. Tiene prioridad sobre el crédito de 20% (etapa 2).
+    if (businessId) {
+      const bizRef = await prisma.business.findUnique({
+        where: { id: businessId },
+        select: { freeMonthsEarned: true, freeMonthsUsed: true },
+      });
+      if (bizRef && bizRef.freeMonthsEarned > bizRef.freeMonthsUsed) {
+        const sub = await subscriptionService.getByBusiness(businessId);
+        if (sub) {
+          await subscriptionService.applyFreeMonth(sub.id, plan);
+          await prisma.business.update({
+            where: { id: businessId },
+            data: { freeMonthsUsed: { increment: 1 }, plan },
+          });
+          return res.json({ freeMonthApplied: true, plan });
+        }
+      }
+    }
+
     let amountInCents = Math.round(planDef.price * 100);
     const currency = planDef.currency;
 
