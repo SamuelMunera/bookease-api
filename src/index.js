@@ -98,6 +98,7 @@ app.patch('/api/bookings/home/:id/cancel', generalLimiter, authenticate, homeSer
 app.use('/api/subscriptions', generalLimiter, require('./routes/subscription.routes'));
 app.use('/api/payments', generalLimiter, require('./routes/payment.routes'));
 app.use('/api/cron', require('./routes/cron.routes'));
+app.use('/api/promotions', generalLimiter, require('./routes/promotion.routes'));
 app.get('/health', (_, res) => res.json({ status: 'ok' }));
 
 // Public platform stats

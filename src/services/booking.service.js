@@ -330,7 +330,9 @@ async function createManualBooking({ creatorId, creatorRole, professionalId, ser
   if (!professionalId || !serviceId || !date || !startTime)
     throw new Error('professionalId, serviceId, date y startTime son obligatorios');
   await assertBillingActive(professionalId);
-  if (!clientEmail && !clientName)
+  const walkInSources = new Set(['PRESENCIAL', 'MANUAL']);
+  const isWalkIn = source && walkInSources.has((source || '').toUpperCase());
+  if (!isWalkIn && !clientEmail && !clientName)
     throw new Error('Proporciona el email o nombre del cliente');
   if (clientEmail && !EMAIL_RE.test(clientEmail.trim()))
     throw new Error('Email del cliente inválido');
