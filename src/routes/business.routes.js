@@ -26,6 +26,7 @@ router.get('/me/join-requests',               authenticate, requireRole('BUSINES
 router.patch('/me/join-requests/:id/approve', authenticate, requireRole('BUSINESS_OWNER'), joinRequestController.approveRequest);
 router.patch('/me/join-requests/:id/reject',  authenticate, requireRole('BUSINESS_OWNER'), joinRequestController.rejectRequest);
 router.get('/me/revenue',                     authenticate, requireRole('BUSINESS_OWNER'), revenueController.getBusinessRevenue);
+router.get('/me/referrals',                   authenticate, requireRole('BUSINESS_OWNER'), businessController.getReferrals);
 router.post('/me/verify-email/send',          authenticate, requireRole('BUSINESS_OWNER'), businessController.sendVerifyEmail);
 router.get('/verify-email/:token',            businessController.confirmVerifyEmail);
 router.get('/me/analytics',                   authenticate, requireRole('BUSINESS_OWNER'), analyticsController.businessAnalytics);

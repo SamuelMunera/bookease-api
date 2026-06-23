@@ -76,6 +76,11 @@ async function create(ownerId, data) {
     }));
   }
 
+  // Anti-abuso: no puedes referirte a ti mismo (mismo dueño = autoreferido).
+  if (referral?.type === 'BUSINESS_REFERRAL' && referral.referrerOwnerId === ownerId) {
+    throw new Error('No puedes usar tu propio código de referido.');
+  }
+
   // Address validation
   const addrErrors = validateAddress({
     country: clean.country, address: clean.address,
@@ -129,6 +134,13 @@ async function create(ownerId, data) {
     if (referral?.type === 'PROMOTER') {
       await referralService.recordPromoterConversion(
         { promoterId: referral.promoterId, promoterCode: referral.promoterCode, businessId: biz.id },
+        tx,
+      );
+    }
+
+    if (referral?.type === 'BUSINESS_REFERRAL') {
+      await referralService.recordBusinessReferral(
+        { referrerBusinessId: referral.referrerBusinessId, referredBusinessId: biz.id, referredByCode: referral.referredByCode },
         tx,
       );
     }

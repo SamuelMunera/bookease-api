@@ -102,6 +102,16 @@ model Business {
   phoneNorm          String?
   addressNorm        String?
   promoterId         String?
+
+  // Business-to-business referral program
+  referralCode          String?  @unique   // código propio para referir otros negocios
+  referredByCode        String?            // código que usó al registrarse (si aplica)
+  referrerBusinessId    String?            // negocio que lo refirió (resuelto)
+  freeMonthsEarned      Int      @default(0)
+  freeMonthsUsed        Int      @default(0)
+  discountCreditsEarned Int      @default(0)
+  discountCreditsUsed   Int      @default(0)
+
   owner             User              @relation(fields: [ownerId], references: [id])
   professionals     Professional[]
   services          Service[]
@@ -116,6 +126,33 @@ model Business {
   payments          Payment[]
   promoterConversion PromoterConversion?
   promotions        Promotion[]
+
+  referrer           Business?  @relation("BizReferral", fields: [referrerBusinessId], references: [id])
+  referredBusinesses Business[] @relation("BizReferral")
+  referralsMade      BusinessReferral[] @relation("Referrer")
+  referralRecord     BusinessReferral?  @relation("Referred")
+}
+
+// One row per business-to-business referral. The reward for the referrer is
+// granted only when the referred business completes a real first payment
+// (status SUCCESSFUL), never just for typing the code.
+model BusinessReferral {
+  id                      String    @id @default(cuid())
+  referrerBusinessId      String
+  referredBusinessId      String    @unique   // un negocio solo puede ser referido una vez
+  referredByCode          String
+  status                  String    @default("PENDING")  // PENDING | SUCCESSFUL
+  referredDiscountApplied Boolean   @default(false)      // 20% primer mes ya aplicado al referido
+  rewardType              String?   // FREE_MONTH | DISCOUNT_20
+  rewardValue             Int?      // 100 (mes gratis) | 20 (descuento)
+  rewardAppliedAt         DateTime?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  referrer Business @relation("Referrer", fields: [referrerBusinessId], references: [id])
+  referred Business @relation("Referred", fields: [referredBusinessId], references: [id])
+
+  @@index([referrerBusinessId])
 }
 
 model Promotion {
@@ -574,6 +611,7 @@ model Payment {
   status             PaymentStatus @default(PENDING)
   wompiTransactionId String?
   promoterDiscountApplied Boolean  @default(false)
+  referrerCreditApplied   Boolean  @default(false)  // este pago consumió un crédito 20% de referidos
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
 

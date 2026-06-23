@@ -4,6 +4,8 @@ const { getPlanById } = require('../config/plans');
 
 const TRIAL_DAYS = 15;
 const PERIOD_DAYS = 30;
+// Descuento del referidor en etapa 2 (no acumulable, un crédito por factura).
+const REFERRER_DISCOUNT_PCT = 20;
 // Courtesy subscriptions get a 100-year period so renewal/expiration crons
 // never touch them — effectively free forever.
 const COURTESY_PERIOD_DAYS = 365 * 100;
@@ -128,12 +130,14 @@ async function activate(subscriptionId, plan, { paymentSourceId } = {}) {
 
 // Attempts a recurring monthly charge against the saved payment_source.
 // Records the attempt as a Payment row (mirrors the initial-checkout flow)
-// and returns true only if Wompi approved it.
-async function chargeRenewal(sub) {
+// and returns true only if Wompi approved it. `discountPct` aplica un único
+// descuento de referidos (no acumulable) a esta factura.
+async function chargeRenewal(sub, { discountPct = 0 } = {}) {
   const planDef = getPlanById(sub.billingPlan, sub.country);
   if (!planDef?.price) return false;
 
-  const amountInCents = Math.round(planDef.price * 100);
+  let amountInCents = Math.round(planDef.price * 100);
+  if (discountPct > 0) amountInCents = Math.round(amountInCents * (1 - discountPct / 100));
   const reference = wompiService.generateReference();
 
   let txn;
@@ -271,10 +275,48 @@ async function renewDue() {
     },
   });
 
-  let renewed = 0, markedPastDue = 0;
+  let renewed = 0, markedPastDue = 0, freeMonthsApplied = 0;
   for (const sub of due) {
+    // Recompensas del programa de referidos (solo negocios).
+    let biz = null;
+    if (sub.businessId) {
+      biz = await prisma.business.findUnique({
+        where: { id: sub.businessId },
+        select: { freeMonthsEarned: true, freeMonthsUsed: true, discountCreditsEarned: true, discountCreditsUsed: true },
+      });
+    }
+
+    // Etapa 1: si el referidor tiene meses gratis disponibles, esta renovación
+    // es gratis — se extiende el periodo sin cobrar y se consume un mes.
+    const freeMonthsAvailable = biz ? biz.freeMonthsEarned - biz.freeMonthsUsed : 0;
+    if (freeMonthsAvailable > 0) {
+      await prisma.business.update({
+        where: { id: sub.businessId },
+        data: { freeMonthsUsed: { increment: 1 } },
+      });
+      const updated = await prisma.subscription.update({
+        where: { id: sub.id },
+        data: { status: 'ACTIVE', ...periodDates(sub.currentPeriodEnd) },
+      });
+      await syncBusinessStatus(updated.businessId, updated);
+      renewed++; freeMonthsApplied++;
+      continue;
+    }
+
+    // Etapa 2: un único crédito de 20% (no acumulable) sobre esta factura.
+    const creditAvailable = biz ? biz.discountCreditsEarned > biz.discountCreditsUsed : false;
+    const discountPct = creditAvailable ? REFERRER_DISCOUNT_PCT : 0;
+
     const canAutoCharge = sub.autoRenew && sub.paymentSourceId && sub.billingPlan;
-    const approved = canAutoCharge && await chargeRenewal(sub);
+    const approved = canAutoCharge && await chargeRenewal(sub, { discountPct });
+
+    // El crédito solo se descuenta si el cobro con descuento fue aprobado.
+    if (approved && creditAvailable) {
+      await prisma.business.update({
+        where: { id: sub.businessId },
+        data: { discountCreditsUsed: { increment: 1 } },
+      });
+    }
 
     const updated = approved
       ? await prisma.subscription.update({
@@ -290,7 +332,7 @@ async function renewDue() {
     approved ? renewed++ : markedPastDue++;
   }
 
-  return { renewed, markedPastDue };
+  return { renewed, markedPastDue, freeMonthsApplied };
 }
 
 // Called by cron: cancel subscriptions past their period end with cancelAtPeriodEnd=true

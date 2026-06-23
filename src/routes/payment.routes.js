@@ -5,6 +5,7 @@ const wompi = require('../config/wompi');
 const wompiService = require('../services/wompi.service');
 const { getPlanById } = require('../config/plans');
 const subscriptionService = require('../services/subscription.service');
+const referralService = require('../services/referral.service');
 
 const VALID_BUSINESS_PLANS = ['team', 'studio', 'enterprise'];
 const VALID_PRO_PLANS = ['solo'];
@@ -63,11 +64,36 @@ router.post('/wompi/checkout', authenticate, async (req, res) => {
       promoterDiscountApplied = true;
     }
 
+    // Descuentos del programa de referidos negocio→negocio. NO ACUMULABLE:
+    // se aplica como máximo UN descuento por factura. Si ya hubo descuento de
+    // promotor, no se apila ningún descuento de referidos.
+    let referrerCreditApplied = false;
+    if (businessId && !promoterDiscountApplied) {
+      // (a) 20% primer mes para el negocio REFERIDO (aún sin aplicar).
+      const referredRecord = await prisma.businessReferral.findUnique({
+        where: { referredBusinessId: businessId },
+        select: { id: true, referredDiscountApplied: true },
+      });
+      if (referredRecord && !referredRecord.referredDiscountApplied) {
+        amountInCents = Math.round(amountInCents * (1 - referralService.REFERRED_DISCOUNT / 100));
+      } else {
+        // (b) crédito de 20% del REFERIDOR (etapa 2). Solo uno por factura.
+        const biz = await prisma.business.findUnique({
+          where: { id: businessId },
+          select: { discountCreditsEarned: true, discountCreditsUsed: true },
+        });
+        if (biz && biz.discountCreditsEarned > biz.discountCreditsUsed) {
+          amountInCents = Math.round(amountInCents * (1 - referralService.REFERRER_DISCOUNT / 100));
+          referrerCreditApplied = true;
+        }
+      }
+    }
+
     const reference = wompiService.generateReference();
     const signature = wompiService.buildIntegritySignature({ reference, amountInCents, currency });
 
     await prisma.payment.create({
-      data: { reference, businessId, professionalId, plan, amountInCents, currency, promoterDiscountApplied },
+      data: { reference, businessId, professionalId, plan, amountInCents, currency, promoterDiscountApplied, referrerCreditApplied },
     });
 
     const customer = await prisma.user.findUnique({ where: { id: req.user.id }, select: { email: true } });
@@ -147,6 +173,23 @@ router.post('/wompi/webhook', async (req, res) => {
           },
           data: { status: 'DISCOUNT_APPLIED' },
         });
+      }
+
+      if (payment.businessId) {
+        // El pago real del negocio referido marca la referencia como EXITOSA y
+        // dispara la recompensa del referidor (mes gratis o crédito 20%).
+        // Idempotente ante webhooks duplicados de Wompi.
+        await referralService.markReferralSuccessful(payment.businessId).catch(err =>
+          console.error('[wompi webhook] referral reward error:', err.message));
+
+        // Si este pago consumió un crédito 20% del referidor, recién ahora
+        // (pago aprobado) se descuenta del saldo — nunca en pagos fallidos.
+        if (payment.referrerCreditApplied) {
+          await prisma.business.update({
+            where: { id: payment.businessId },
+            data: { discountCreditsUsed: { increment: 1 } },
+          });
+        }
       }
     }
 

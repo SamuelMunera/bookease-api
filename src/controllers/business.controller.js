@@ -1,4 +1,5 @@
 const businessService = require('../services/business.service');
+const referralService = require('../services/referral.service');
 const { uploadFile } = require('../config/storage');
 const upload = require('../middleware/upload');
 
@@ -130,4 +131,13 @@ async function updatePlan(req, res) {
   }
 }
 
-module.exports = { create, findAll, findById, getMe, updateProfile, uploadLogo, update, remove, sendVerifyEmail, confirmVerifyEmail, checkDuplicate, updatePlan };
+async function getReferrals(req, res) {
+  try {
+    const summary = await referralService.getReferralSummary(req.user.id);
+    res.json(summary);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+}
+
+module.exports = { create, findAll, findById, getMe, updateProfile, uploadLogo, update, remove, sendVerifyEmail, confirmVerifyEmail, checkDuplicate, updatePlan, getReferrals };
