@@ -142,10 +142,20 @@ async function getProfessionalServices(req, res) {
   try {
     const prof = await prisma.professional.findUnique({
       where: { id: req.params.id },
-      select: { services: { select: { id: true, name: true, duration: true, price: true } } },
+      select: {
+        services: { select: { id: true, name: true, description: true, duration: true, price: true, categoryId: true } },
+        serviceConfigs: { select: { serviceId: true, customDuration: true } },
+      },
     });
     if (!prof) return res.status(404).json({ error: 'Professional not found' });
-    res.json(prof.services);
+    // La duración real de un servicio la define cada profesional. Si tiene un
+    // customDuration configurado, ese es el tiempo; si no, cae al valor base.
+    const cfg = new Map(prof.serviceConfigs.map(c => [c.serviceId, c.customDuration]));
+    const services = prof.services.map(s => ({
+      ...s,
+      duration: cfg.get(s.id) ?? s.duration,
+    }));
+    res.json(services);
   } catch (err) { res.status(500).json({ error: "Internal server error" }); }
 }
 

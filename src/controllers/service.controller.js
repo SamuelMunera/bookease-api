@@ -2,17 +2,28 @@ const serviceService = require('../services/service.service');
 
 async function create(req, res) {
   try {
-    const { name, duration, price } = req.body;
-    if (!name || !duration || price === undefined) {
-      return res.status(400).json({ error: 'name, duration and price are required' });
+    const { name, price } = req.body;
+    // La duración real la define cada profesional; este valor base es solo un
+    // fallback (referencia) usado hasta que el profesional configure el suyo.
+    const duration = (req.body.duration === undefined || req.body.duration === null || req.body.duration === '')
+      ? 30
+      : Number(req.body.duration);
+    const professionalIds = Array.isArray(req.body.professionalIds) ? req.body.professionalIds : [];
+    if (!name || price === undefined || price === '') {
+      return res.status(400).json({ error: 'name and price are required' });
     }
-    if (typeof duration !== 'number' || duration <= 0) {
+    if (!Number.isFinite(duration) || duration <= 0) {
       return res.status(400).json({ error: 'duration must be a positive number (minutes)' });
     }
     if (Number(price) < 0) {
       return res.status(400).json({ error: 'price must be >= 0' });
     }
-    const service = await serviceService.create(req.params.businessId, { name, duration, price, description: req.body.description, categoryId: req.body.categoryId || null });
+    const service = await serviceService.create(req.params.businessId, {
+      name, duration, price,
+      description: req.body.description,
+      categoryId: req.body.categoryId || null,
+      professionalIds,
+    });
     res.status(201).json(service);
   } catch (err) {
     res.status(400).json({ error: err.message });
