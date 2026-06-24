@@ -1,5 +1,5 @@
 {
-  "buildCommand": "prisma migrate deploy && prisma generate",
+  "buildCommand": "prisma db execute --schema prisma/schema.prisma --file prisma/manual/add_theme_apptverify.sql && prisma generate",
   "rewrites": [
     { "source": "/(.*)", "destination": "/api/index" }
   ],
