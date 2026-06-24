@@ -172,7 +172,9 @@ async function create(ownerId, data) {
     ownerId, businessId: business.id, referralType: referral?.type ?? null, ts: new Date().toISOString(),
   }));
 
-  geocodeAddress(business.address, business.city).then(coords => {
+  geocodeAddress(business.address, business.city, {
+    state: business.state, country: business.country, zipCode: business.zipCode,
+  }).then(coords => {
     if (coords) prisma.business.update({ where: { id: business.id }, data: coords }).catch(() => {});
   });
 
@@ -406,7 +408,9 @@ async function updateProfile(ownerId, data) {
   if (clean.address || clean.city) {
     const addr = clean.address || updated.address;
     const city = clean.city    || updated.city;
-    geocodeAddress(addr, city).then(coords => {
+    geocodeAddress(addr, city, {
+      state: updated.state, country: updated.country, zipCode: updated.zipCode,
+    }).then(coords => {
       if (coords) prisma.business.update({ where: { id: updated.id }, data: coords }).catch(() => {});
     });
   }
