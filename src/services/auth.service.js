@@ -48,7 +48,35 @@ const AUDIENCE_ROLES = {
   admin: ['ADMIN'],
 };
 
-async function login({ email, password, audience }) {
+// La identidad (User + email) es única, pero una misma persona puede operar en
+// varios contextos. Los contextos se DERIVAN de las relaciones, no del email:
+// dueño de un negocio => BUSINESS_OWNER, perfil profesional => PROFESSIONAL.
+// Se respeta además el `role` primario almacenado para no romper onboarding
+// (p.ej. un BUSINESS_OWNER que aún no creó su negocio).
+async function getUserContexts(user) {
+  const roles = new Set();
+  if (user.role === 'CLIENT') roles.add('CLIENT');
+  if (user.role === 'ADMIN') roles.add('ADMIN');
+  if (user.role === 'BUSINESS_OWNER') roles.add('BUSINESS_OWNER');
+  if (user.role === 'PROFESSIONAL') roles.add('PROFESSIONAL');
+
+  const [bizCount, prof] = await Promise.all([
+    prisma.business.count({ where: { ownerId: user.id } }),
+    prisma.professional.findUnique({ where: { userId: user.id }, select: { id: true } }),
+  ]);
+  if (bizCount > 0) roles.add('BUSINESS_OWNER');
+  if (prof) roles.add('PROFESSIONAL');
+
+  return [...roles];
+}
+
+function signToken(userId, role) {
+  return jwt.sign({ id: userId, role }, process.env.JWT_SECRET, {
+    expiresIn: process.env.JWT_EXPIRES_IN || '7d',
+  });
+}
+
+async function login({ email, password, audience, context }) {
   const normalizedEmail = typeof email === 'string' ? email.toLowerCase().trim() : '';
   const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
   if (!user) throw new Error('Invalid credentials');
@@ -56,24 +84,58 @@ async function login({ email, password, audience }) {
   const valid = await bcrypt.compare(password, user.password);
   if (!valid) throw new Error('Invalid credentials');
 
-  // Si se especifica audience, el rol del usuario debe corresponder a ese acceso.
+  const contexts = await getUserContexts(user);
+
+  // El acceso (audience) acota los contextos elegibles a los suyos.
   // Sin audience se mantiene compatibilidad con llamadas existentes.
+  let candidates = contexts;
   if (audience) {
-    const allowed = AUDIENCE_ROLES[audience];
-    if (!allowed || !allowed.includes(user.role)) {
+    const allowed = AUDIENCE_ROLES[audience] || [];
+    candidates = contexts.filter((r) => allowed.includes(r));
+    if (candidates.length === 0) {
       const err = new Error('Esta cuenta no corresponde a este acceso. Usa el inicio de sesión correcto.');
       err.status = 403;
       throw err;
     }
   }
 
-  const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRES_IN || '7d',
-  });
+  // Determinar el contexto activo con el que se emite la sesión.
+  let activeRole;
+  if (context && candidates.includes(context)) {
+    activeRole = context;
+  } else if (candidates.length === 1) {
+    activeRole = candidates[0];
+  } else if (candidates.length > 1) {
+    // La identidad tiene varios contextos válidos para este acceso: que elija.
+    return {
+      needsContext: true,
+      availableRoles: candidates,
+      user: { id: user.id, name: user.name, email: user.email },
+    };
+  } else {
+    activeRole = user.role; // legacy fallback (sin audience, sin relaciones)
+  }
 
   return {
-    user: { id: user.id, name: user.name, email: user.email, role: user.role, country: user.country },
-    token,
+    user: { id: user.id, name: user.name, email: user.email, role: activeRole, country: user.country, availableRoles: contexts },
+    token: signToken(user.id, activeRole),
+  };
+}
+
+// Cambio de contexto para una identidad ya autenticada. Solo permite activar un
+// contexto que el usuario realmente posee (sin heredar permisos sin control).
+async function switchContext(userId, role) {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw new Error('Usuario no encontrado');
+  const contexts = await getUserContexts(user);
+  if (!contexts.includes(role)) {
+    const err = new Error('No tienes acceso a ese contexto.');
+    err.status = 403;
+    throw err;
+  }
+  return {
+    user: { id: user.id, name: user.name, email: user.email, role, country: user.country, availableRoles: contexts },
+    token: signToken(user.id, role),
   };
 }
 
@@ -212,4 +274,4 @@ async function googleAuth(accessToken, role = 'CLIENT') {
   return { user, token, isNew };
 }
 
-module.exports = { register, login, changePassword, forgotPassword, resetPassword, googleAuth };
+module.exports = { register, login, changePassword, forgotPassword, resetPassword, googleAuth, switchContext, getUserContexts };

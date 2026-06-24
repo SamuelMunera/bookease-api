@@ -5,6 +5,7 @@ const { loginLimiter, registerLimiter, forgotPasswordLimiter, resetPasswordLimit
 
 router.post('/register',         registerLimiter,        authController.register);
 router.post('/login',            loginLimiter,           authController.login);
+router.post('/switch-context',   authenticate,           authController.switchContext);
 router.patch('/change-password', authenticate,           authController.changePassword);
 router.post('/forgot-password',  forgotPasswordLimiter,  authController.forgotPassword);
 router.post('/reset-password',   resetPasswordLimiter,   authController.resetPassword);

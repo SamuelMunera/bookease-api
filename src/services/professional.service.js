@@ -4,13 +4,34 @@ const prisma = require('../config/database');
 const { getPlanLimit } = require('../config/plans');
 const subscriptionService = require('./subscription.service');
 const referralService = require('./referral.service');
+const authService = require('./auth.service');
 
 async function registerProfessional({ name, email, password, phone, specialty, bio, experience, businessId, offersHomeService, homeServiceArea, country, timezone, state, zipCode, referralCode }) {
   if (!name || !email || !password) throw new Error('name, email and password are required');
   if (password.length < 8) throw new Error('La contraseña debe tener al menos 8 caracteres');
 
-  const existing = await prisma.user.findUnique({ where: { email } });
-  if (existing) throw new Error('Email already registered');
+  const normalizedEmail = email.toLowerCase().trim();
+  const existing = await prisma.user.findUnique({
+    where: { email: normalizedEmail },
+    include: { professional: { select: { id: true } } },
+  });
+  // Linking seguro: si el correo ya pertenece a una identidad (p.ej. un dueño de
+  // negocio), la misma persona puede añadir un perfil profesional, pero debe
+  // probar que es ella con su contraseña actual. No se duplica el User ni se
+  // trata el email como "tipo de cuenta".
+  if (existing) {
+    const ownsIdentity = await bcrypt.compare(password, existing.password);
+    if (!ownsIdentity) {
+      const err = new Error('Ese correo ya está registrado. Inicia sesión con tu contraseña para añadir tu perfil profesional.');
+      err.status = 409;
+      throw err;
+    }
+    if (existing.professional) {
+      const err = new Error('Este correo ya tiene un perfil profesional.');
+      err.status = 409;
+      throw err;
+    }
+  }
 
   // Referral/courtesy code (only meaningful for independent professionals)
   const referral = await referralService.resolveReferralCode(referralCode);
@@ -30,8 +51,6 @@ async function registerProfessional({ name, email, password, phone, specialty, b
     }
   }
 
-  const hashed = await bcrypt.hash(password, 12);
-
   const proData = {
     name, phone, specialty, bio, experience,
     ...(businessId ? { businessId } : {}),
@@ -44,18 +63,34 @@ async function registerProfessional({ name, email, password, phone, specialty, b
     ...(referral?.type === 'PROMOTER' ? { promoterId: referral.promoterId } : {}),
   };
 
-  const user = await prisma.user.create({
-    data: {
-      name, email, password: hashed, role: 'PROFESSIONAL',
-      professional: { create: proData },
-    },
-    select: {
-      id: true, name: true, email: true, role: true,
-      professional: { select: { id: true, businessId: true, specialty: true } },
-    },
-  });
+  let user;
+  if (existing) {
+    // Vincular un nuevo perfil profesional a la identidad ya existente, sin
+    // tocar su contraseña ni su `role` primario (sigue siendo, p.ej., dueño).
+    const professional = await prisma.professional.create({
+      data: { ...proData, userId: existing.id },
+      select: { id: true, businessId: true, specialty: true },
+    });
+    user = { id: existing.id, name: existing.name, email: existing.email, role: 'PROFESSIONAL', professional };
+  } else {
+    const hashed = await bcrypt.hash(password, 12);
+    user = await prisma.user.create({
+      data: {
+        name, email: normalizedEmail, password: hashed, role: 'PROFESSIONAL',
+        professional: { create: proData },
+      },
+      select: {
+        id: true, name: true, email: true, role: true,
+        professional: { select: { id: true, businessId: true, specialty: true } },
+      },
+    });
+  }
 
-  const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET, {
+  // El contexto activo recién creado es PROFESSIONAL. Si la identidad además es
+  // dueña de un negocio, su token podrá alternar de contexto luego.
+  const contexts = await authService.getUserContexts({ id: user.id, role: existing ? existing.role : 'PROFESSIONAL' });
+  user.availableRoles = contexts;
+  const token = jwt.sign({ id: user.id, role: 'PROFESSIONAL' }, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRES_IN || '7d',
   });
 

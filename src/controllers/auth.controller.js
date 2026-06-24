@@ -10,17 +10,35 @@ async function register(req, res) {
 }
 
 const VALID_AUDIENCES = ['client', 'pro', 'admin'];
+const VALID_CONTEXTS = ['CLIENT', 'BUSINESS_OWNER', 'PROFESSIONAL', 'ADMIN'];
 
 async function login(req, res) {
   try {
-    const { email, password, audience } = req.body;
+    const { email, password, audience, context } = req.body;
     if (audience !== undefined && !VALID_AUDIENCES.includes(audience)) {
       return res.status(400).json({ error: 'audience inválido' });
     }
-    const result = await authService.login({ email, password, audience });
+    if (context !== undefined && !VALID_CONTEXTS.includes(context)) {
+      return res.status(400).json({ error: 'context inválido' });
+    }
+    const result = await authService.login({ email, password, audience, context });
     res.json(result);
   } catch (err) {
     res.status(err.status || 401).json({ error: err.message });
+  }
+}
+
+// Cambia el contexto activo (negocio/profesional/…) de la identidad autenticada.
+async function switchContext(req, res) {
+  try {
+    const { role } = req.body;
+    if (!VALID_CONTEXTS.includes(role)) {
+      return res.status(400).json({ error: 'role inválido' });
+    }
+    const result = await authService.switchContext(req.user.id, role);
+    res.json(result);
+  } catch (err) {
+    res.status(err.status || 400).json({ error: err.message });
   }
 }
 
@@ -90,4 +108,4 @@ async function updateMe(req, res) {
   }
 }
 
-module.exports = { register, login, changePassword, forgotPassword, resetPassword, googleAuth, updateMe };
+module.exports = { register, login, switchContext, changePassword, forgotPassword, resetPassword, googleAuth, updateMe };
