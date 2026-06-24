@@ -233,11 +233,12 @@ router.get('/promoters/:id', async (req, res) => {
 
 router.post('/promoters', async (req, res) => {
   try {
-    const { firstName, lastName, email, phone } = req.body;
+    const { firstName, lastName, email, phone, country } = req.body;
     if (!firstName?.trim() || !lastName?.trim() || !email?.trim()) {
       return res.status(400).json({ error: 'Nombre, apellido y email son requeridos' });
     }
     const cleanEmail = String(email).trim().toLowerCase();
+    const cleanCountry = country === 'US' ? 'US' : 'CO'; // país del promotor → moneda de su comisión
     const existing = await prisma.promoter.findUnique({ where: { email: cleanEmail } });
     if (existing) return res.status(400).json({ error: 'Ya existe un promotor con ese email' });
 
@@ -248,6 +249,7 @@ router.post('/promoters', async (req, res) => {
         lastName: String(lastName).trim().slice(0, 100),
         email: cleanEmail,
         phone: phone ? String(phone).trim().slice(0, 30) : null,
+        country: cleanCountry,
         code,
       },
     });
@@ -320,9 +322,11 @@ router.post('/courtesy-codes', async (req, res) => {
 // referidos y comisiones a promotores (estas últimas SOLO informativas — no
 // hay cobro ni pasarela hacia promotores).
 
-router.get('/finance/overview', async (_req, res) => {
+// country (CO|US) selecciona el país/moneda; default CO. Las finanzas nunca
+// mezclan ni convierten monedas: cada vista es de un solo país.
+router.get('/finance/overview', async (req, res) => {
   try {
-    res.json(await adminFinanceService.getOverview());
+    res.json(await adminFinanceService.getOverview({ country: req.query.country }));
   } catch {
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -339,7 +343,7 @@ router.get('/finance/subscriptions', async (req, res) => {
 router.get('/finance/discounts', async (req, res) => {
   try {
     const commissionService = require('../services/commission.service');
-    res.json(await commissionService.getDiscountBreakdown({ from: req.query.from, to: req.query.to }));
+    res.json(await commissionService.getDiscountBreakdown({ from: req.query.from, to: req.query.to, country: req.query.country }));
   } catch {
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -351,6 +355,7 @@ router.get('/finance/commissions', async (req, res) => {
     res.json(await commissionService.getPromoterCommissions({
       year: Number(req.query.year) || undefined,
       month: Number(req.query.month) || undefined,
+      country: req.query.country,
     }));
   } catch {
     res.status(500).json({ error: 'Internal server error' });

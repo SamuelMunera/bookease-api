@@ -531,6 +531,7 @@ model Promoter {
   email     String         @unique
   phone     String?
   code      String         @unique
+  country   String         @default("CO") // CO | US — para diferenciar comisiones por moneda
   status    PromoterStatus @default(ACTIVE)
   createdAt DateTime       @default(now())
   updatedAt DateTime       @updatedAt

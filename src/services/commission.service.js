@@ -33,6 +33,12 @@ const MONTHS = [
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
 ];
 
+// País → moneda. Las finanzas se reportan por un solo país/moneda a la vez
+// (selector CO/US del dashboard); nunca se suman ni convierten monedas.
+const COUNTRY_CURRENCY = { CO: 'COP', US: 'USD' };
+function normalizeCountry(c) { return c === 'US' ? 'US' : 'CO'; }
+function currencyFor(country) { return COUNTRY_CURRENCY[normalizeCountry(country)]; }
+
 // ---- helpers ---------------------------------------------------------------
 
 // Precio lista del plan en CENTAVOS según el país de la entidad.
@@ -68,14 +74,17 @@ function monthRangeUTC(year, month) {
 // Nota: se filtra por businessId/professionalId del Payment (no por su propio
 // promoterId, porque Payment no tiene promoterId). La atribución vive en la
 // entidad referida, que es la fuente de verdad del programa de promotores.
-async function getPromoterCommissions({ year, month } = {}) {
+async function getPromoterCommissions({ year, month, country } = {}) {
   const now = new Date();
   const y = year ?? now.getUTCFullYear();
   const m = month ?? now.getUTCMonth() + 1; // getUTCMonth es 0-11
   const { start, end } = monthRangeUTC(y, m);
   const periodLabel = `${MONTHS[m - 1]} ${y}`;
+  const ctry = normalizeCountry(country);
+  const currency = currencyFor(ctry); // COP | USD — filtra los pagos por moneda
 
   const promoters = await prisma.promoter.findMany({
+    where: { country: ctry }, // solo promotores de ese país
     include: {
       businesses: { select: { id: true } },
       // Solo profesionales INDEPENDIENTES (sin negocio): un pro dentro de un
@@ -117,16 +126,16 @@ async function getPromoterCommissions({ year, month } = {}) {
       ],
     };
 
-    // Pagos aprobados del mes.
+    // Pagos aprobados del mes (en la moneda del país seleccionado).
     const monthlyAgg = await prisma.payment.aggregate({
       _sum: { amountInCents: true },
-      where: { status: 'APPROVED', createdAt: { gte: start, lt: end }, ...entityFilter },
+      where: { status: 'APPROVED', currency, createdAt: { gte: start, lt: end }, ...entityFilter },
     });
 
-    // Pagos aprobados histórico.
+    // Pagos aprobados histórico (misma moneda).
     const allTimeAgg = await prisma.payment.aggregate({
       _sum: { amountInCents: true },
-      where: { status: 'APPROVED', ...entityFilter },
+      where: { status: 'APPROVED', currency, ...entityFilter },
     });
 
     const monthlyRevenueCents = monthlyAgg._sum.amountInCents ?? 0;
@@ -137,7 +146,7 @@ async function getPromoterCommissions({ year, month } = {}) {
     // referredPaid: nº de entidades distintas con al menos un pago APPROVED.
     const paidGroups = await prisma.payment.groupBy({
       by: ['businessId', 'professionalId'],
-      where: { status: 'APPROVED', ...entityFilter },
+      where: { status: 'APPROVED', currency, ...entityFilter },
     });
     const referredPaid = paidGroups.length;
 
@@ -162,6 +171,8 @@ async function getPromoterCommissions({ year, month } = {}) {
 
   return {
     periodLabel,
+    country: ctry,
+    currency,
     commissionPct: COMMISSION_PCT,
     promoters: result,
     totals: {
@@ -183,9 +194,11 @@ async function getPromoterCommissions({ year, month } = {}) {
 //   - courtesy : CourtesyCode.usedAt / Business.coveredByCourtesy
 //   - promoter : PromoterConversion.usedAt (cuando pasó a DISCOUNT_APPLIED)
 //   - referral : BusinessReferral.updatedAt (momento del SUCCESSFUL/aplicado)
-async function getDiscountBreakdown({ from, to } = {}) {
+async function getDiscountBreakdown({ from, to, country } = {}) {
   const fromDate = from ? new Date(from) : null;
   const toDate = to ? new Date(to) : null;
+  const ctry = normalizeCountry(country);
+  const currency = currencyFor(ctry);
 
   // Helper de rango de fecha para campos opcionales (devuelve undefined si no
   // hay límites → Prisma ignora el filtro).
@@ -221,6 +234,7 @@ async function getDiscountBreakdown({ from, to } = {}) {
   for (const c of usedCourtesyCodes) {
     const entity = c.redeemedBusiness || c.redeemedProfessional;
     const country = entity?.country ?? 'CO';
+    if (normalizeCountry(country) !== ctry) continue; // solo el país seleccionado
     courtesyCount += 1;
     courtesyForgoneCents += listPriceCents(c.plan, country);
     if (c.redeemedBusiness) courtesyBusinessIds.add(c.redeemedBusiness.id);
@@ -231,7 +245,7 @@ async function getDiscountBreakdown({ from, to } = {}) {
   // fecha si hay rango, usando createdAt como mejor proxy disponible — el
   // modelo Business no guarda "cuándo se otorgó la cortesía".
   const coveredBusinesses = await prisma.business.findMany({
-    where: { coveredByCourtesy: true, ...(dateFilter('createdAt') ?? {}) },
+    where: { coveredByCourtesy: true, country: ctry, ...(dateFilter('createdAt') ?? {}) },
     select: { id: true, plan: true, country: true },
   });
   for (const b of coveredBusinesses) {
@@ -257,6 +271,7 @@ async function getDiscountBreakdown({ from, to } = {}) {
     const entity = conv.business || conv.professional;
     if (!entity) continue; // conversión sin entidad resuelta → se ignora
     const country = entity.country ?? 'CO';
+    if (normalizeCountry(country) !== ctry) continue; // solo el país seleccionado
     // Usa el discountValue persistido si existe (=10), si no la constante.
     const pct = Number(conv.discountValue ?? PROMOTER_DISCOUNT_PCT);
     promoterCount += 1;
@@ -297,6 +312,8 @@ async function getDiscountBreakdown({ from, to } = {}) {
   const countedReferrers = new Set();
 
   for (const ref of referrals) {
+    // Solo referidos del país seleccionado (por el negocio referido).
+    if (normalizeCountry(ref.referred?.country ?? 'CO') !== ctry) continue;
     referralCount += 1;
 
     // (a) 20% primer mes del referido.
@@ -326,6 +343,8 @@ async function getDiscountBreakdown({ from, to } = {}) {
     courtesy.forgoneCents + promoter.discountCents + referral.discountCents;
 
   return {
+    country: ctry,
+    currency,
     byType: { courtesy, promoter, referral },
     totalDiscountCents,
   };

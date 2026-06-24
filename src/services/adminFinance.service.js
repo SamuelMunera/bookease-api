@@ -10,14 +10,14 @@ const {
 // evitar problemas de coma flotante. Los precios de lista vienen de
 // `getPlanById(plan, country).price` (unidad mayor) → *100 = centavos.
 //
-// IMPORTANTE sobre monedas: los planes están definidos en COP (Colombia) y USD
-// (US). Aquí AGREGAMOS todo en una única cifra de centavos "moneda base"
-// sumando los centavos de cada moneda sin convertir (no hay tasa de cambio en
-// el sistema). Como Slotly opera principalmente en COP, la cifra agregada es
-// efectivamente COP; los pocos importes USD se suman como centavos crudos.
-// Para una vista por moneda exacta usa `byCountry` (que separa por país y, por
-// ende, por moneda). Esto queda documentado para evitar interpretaciones
-// erróneas del KPI agregado.
+// MONEDAS: las finanzas se reportan SIEMPRE para un solo país/moneda a la vez
+// (CO→COP, US→USD), elegido con el parámetro `country`. NO se suman ni convierten
+// monedas distintas (no hay tasa de cambio en el sistema): cada cifra es exacta
+// en su moneda. El dashboard tiene un selector CO/US que pasa este parámetro.
+
+const COUNTRY_CURRENCY = { CO: 'COP', US: 'USD' };
+function normalizeCountry(c) { return c === 'US' ? 'US' : 'CO'; }
+function currencyFor(country) { return COUNTRY_CURRENCY[normalizeCountry(country)]; }
 
 function priceCentsFor(plan, country) {
   const def = getPlanById(plan, country);
@@ -37,9 +37,11 @@ function startOfNextMonth(d = new Date()) {
 // KPIs del dashboard de finanzas. Solo SUSCRIPCIONES DE NEGOCIO (businessId !=
 // null) cuentan para MRR y conteos: las suscripciones de profesionales
 // independientes no se incluyen aquí (este overview es de billing de negocios).
-async function getOverview() {
+async function getOverview({ country } = {}) {
+  const ctry = normalizeCountry(country);
+  const currency = currencyFor(ctry);
   const subs = await prisma.subscription.findMany({
-    where: { businessId: { not: null } },
+    where: { businessId: { not: null }, country: ctry },
   });
 
   let mrrCents = 0;          // MRR real: solo ACTIVE con billingPlan (pagas)
@@ -101,6 +103,7 @@ async function getOverview() {
     _sum: { amountInCents: true },
     where: {
       status: 'APPROVED',
+      currency,
       createdAt: { gte: monthStart, lt: nextMonthStart },
     },
   });
@@ -114,6 +117,8 @@ async function getOverview() {
   const trialConversionRate = conversionBase > 0 ? active / conversionBase : 0;
 
   return {
+    country: ctry,
+    currency,
     mrrCents,
     arrCents: mrrCents * 12,
     mrrPotentialCents,
