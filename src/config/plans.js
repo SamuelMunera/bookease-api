@@ -6,6 +6,20 @@ const PLAN_LIMITS = {
   enterprise: Infinity,
 };
 
+// Orden de tiers para validar upgrades/downgrades. Un upgrade (rank mayor)
+// solo se activa tras pago aprobado vía webhook Wompi; downgrade/igual sí se
+// permite directamente. 'solo' es el plan de profesional independiente.
+const PLAN_RANK = {
+  solo:       0,
+  team:       1,
+  studio:     2,
+  enterprise: 3,
+};
+
+function getPlanRank(planId) {
+  return PLAN_RANK[planId] ?? 0;
+}
+
 const BASE_FEATURES = [
   'Reservas online ilimitadas',
   'Agenda digital',
@@ -43,4 +57,4 @@ function getPlanById(planId, country) {
   return getPlansForCountry(country).find(p => p.id === planId) ?? null;
 }
 
-module.exports = { PLAN_LIMITS, PLANS_BY_COUNTRY, getPlanLimit, getPlansForCountry, getPlanById };
+module.exports = { PLAN_LIMITS, PLAN_RANK, PLANS_BY_COUNTRY, getPlanLimit, getPlanRank, getPlansForCountry, getPlanById };

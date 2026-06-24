@@ -12,7 +12,7 @@ router.patch('/:id/no-show', authenticate, bookingController.noShow);
 router.patch('/:id/complete', authenticate, bookingController.complete);
 
 // Client lookup for manual booking UI
-router.get('/clients/search', authenticate, async (req, res) => {
+router.get('/clients/search', authenticate, requireRole('BUSINESS_OWNER', 'PROFESSIONAL'), async (req, res) => {
   const { email } = req.query;
   if (!email) return res.json(null);
   const prisma = require('../config/database');

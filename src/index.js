@@ -48,6 +48,13 @@ app.use(helmet({
   xssFilter: true,
 }));
 
+// En producción ALLOWED_ORIGIN es obligatorio: sin él caeríamos a orígenes de
+// localhost, lo que sería un fallo de configuración silencioso. Falla rápido.
+if (process.env.NODE_ENV === 'production' && !process.env.ALLOWED_ORIGIN) {
+  console.error('FATAL: ALLOWED_ORIGIN environment variable is required in production. Refusing to start.');
+  process.exit(1);
+}
+
 const allowedOrigins = process.env.ALLOWED_ORIGIN
   ? process.env.ALLOWED_ORIGIN.split(',').map(o => o.trim())
   : ['http://localhost:5173', 'http://localhost:3000'];

@@ -247,7 +247,10 @@ async function rescheduleBooking(id, clientId, { date, startTime }) {
       });
       if (!existing) throw new Error('Booking not found');
       if (existing.clientId !== clientId) throw new Error('Forbidden');
-      if (existing.status === 'CANCELLED') throw new Error('Cannot reschedule a cancelled booking');
+      // C-19: no se puede reagendar una cita en estado terminal (cancelada,
+      // completada o no-show) — eso revivía estados terminales y falseaba métricas.
+      if (TERMINAL_STATUSES.has(existing.status))
+        throw new Error('No se puede reagendar una cita cancelada, completada o marcada como no asistida.');
 
       const { professionalId, service, homeService } = existing;
       if (existing.type === 'HOME_SERVICE') throw new Error('Home service bookings cannot be rescheduled here');
@@ -340,7 +343,7 @@ async function createManualBooking({ creatorId, creatorRole, professionalId, ser
   // Authorization: creator must own or manage the professional
   const pro = await prisma.professional.findUnique({
     where: { id: professionalId },
-    select: { userId: true, business: { select: { ownerId: true } } },
+    select: { userId: true, businessId: true, business: { select: { ownerId: true } } },
   });
   if (!pro) throw new Error('Professional not found');
   const isOwnPro  = pro.userId === creatorId;
@@ -362,16 +365,38 @@ async function createManualBooking({ creatorId, creatorRole, professionalId, ser
   if (!client) {
     const bcrypt = require('bcryptjs');
     const crypto = require('crypto');
-    const tempPass = crypto.randomBytes(16).toString('hex');
-    client = await prisma.user.create({
-      data: {
-        name:     clientName || (lookupEmail ? lookupEmail.split('@')[0] : 'Cliente'),
-        email:    lookupEmail || `guest-${crypto.randomBytes(8).toString('hex')}@slotly.internal`,
-        password: await bcrypt.hash(tempPass, 12),
-        role:     'CLIENT',
-        ...(clientPhone ? { phone: clientPhone } : {}),
-      },
-    });
+    if (isWalkIn && !lookupEmail) {
+      // C-01: cita presencial/walk-in sin email NO crea una cuenta nueva por
+      // cada cita (eso generaba usuarios CLIENT fantasma, acumulables y
+      // enumerables). Se reutiliza un único usuario placeholder por negocio
+      // (o por profesional independiente). El nombre real del cliente vive en
+      // booking.guestName, no en el User.
+      const walkInEmail = pro.businessId
+        ? `walkin-${pro.businessId}@slotly.internal`
+        : `walkin-pro-${professionalId}@slotly.internal`;
+      client = await prisma.user.findUnique({ where: { email: walkInEmail } });
+      if (!client) {
+        client = await prisma.user.create({
+          data: {
+            name:     'Cliente presencial',
+            email:    walkInEmail,
+            password: await bcrypt.hash(crypto.randomBytes(16).toString('hex'), 12),
+            role:     'CLIENT',
+          },
+        });
+      }
+    } else {
+      const tempPass = crypto.randomBytes(16).toString('hex');
+      client = await prisma.user.create({
+        data: {
+          name:     clientName || (lookupEmail ? lookupEmail.split('@')[0] : 'Cliente'),
+          email:    lookupEmail || `guest-${crypto.randomBytes(8).toString('hex')}@slotly.internal`,
+          password: await bcrypt.hash(tempPass, 12),
+          role:     'CLIENT',
+          ...(clientPhone ? { phone: clientPhone } : {}),
+        },
+      });
+    }
   }
 
   // Reuse core booking logic (validates schedule, conflicts, etc.)

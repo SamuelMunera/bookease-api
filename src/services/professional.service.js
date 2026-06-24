@@ -238,7 +238,11 @@ async function create(businessId, data) {
 }
 
 async function findByBusiness(businessId) {
-  return prisma.professional.findMany({ where: { businessId } });
+  // Solo campos públicos: nunca exponer userId, country, normalizaciones, etc.
+  return prisma.professional.findMany({
+    where: { businessId },
+    select: { id: true, name: true, bio: true, specialty: true, avatarUrl: true },
+  });
 }
 
 async function findHomeProfessionals({ city, country } = {}) {

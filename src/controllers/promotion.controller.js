@@ -29,6 +29,23 @@ async function createPromotion(req, res) {
     const VALID_TYPES = ['PERCENTAGE', 'FIXED', 'CUSTOM_PRICE'];
     const safeType = VALID_TYPES.includes(discountType) ? discountType : 'PERCENTAGE';
 
+    // Validación por tipo de descuento.
+    const numValue = discountValue != null ? parseFloat(discountValue) : null;
+    const numCustom = customPrice != null ? parseFloat(customPrice) : null;
+    if (safeType === 'PERCENTAGE') {
+      if (numValue == null || isNaN(numValue) || numValue <= 0 || numValue > 100) {
+        return res.status(400).json({ error: 'El porcentaje debe ser mayor que 0 y como máximo 100' });
+      }
+    } else if (safeType === 'FIXED') {
+      if (numValue == null || isNaN(numValue) || numValue <= 0) {
+        return res.status(400).json({ error: 'El monto de descuento debe ser mayor que 0' });
+      }
+    } else if (safeType === 'CUSTOM_PRICE') {
+      if (numCustom == null || isNaN(numCustom) || numCustom <= 0) {
+        return res.status(400).json({ error: 'El precio especial debe ser mayor que 0' });
+      }
+    }
+
     const promotion = await prisma.promotion.create({
       data: {
         businessId:    business.id,
@@ -62,6 +79,14 @@ async function updatePromotion(req, res) {
     const { title, description, discountType, discountValue, customPrice, serviceIds, startDate, endDate, isActive, message } = req.body;
 
     const VALID_TYPES = ['PERCENTAGE', 'FIXED', 'CUSTOM_PRICE'];
+
+    // endDate debe ser posterior a startDate. Se valida contra los valores
+    // entrantes y, para los no provistos, contra los ya guardados en la promo.
+    if (startDate !== undefined || endDate !== undefined) {
+      const effStart = startDate !== undefined ? new Date(startDate) : promo.startDate;
+      const effEnd   = endDate   !== undefined ? new Date(endDate)   : promo.endDate;
+      if (effStart >= effEnd) return res.status(400).json({ error: 'La fecha de fin debe ser posterior a la de inicio' });
+    }
 
     const updated = await prisma.promotion.update({
       where: { id: req.params.id },

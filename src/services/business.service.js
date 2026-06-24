@@ -17,9 +17,13 @@ const PUBLIC_BUSINESS_SELECT = {
   phone: true, category: true, logoUrl: true, coverUrl: true, accentColor: true,
   country: true, timezone: true, state: true, zipCode: true, lat: true, lng: true,
   emailVerified: true, cancelMinHours: true, createdAt: true,
+  // ownerId se conserva: el cliente (BusinessAgendaPage) lo usa para filtrar los
+  // negocios propios del owner autenticado (b.ownerId === user.id).
   ownerId: true, plan: true, paymentGateway: true, showRevenueToProf: true,
   professionals: {
-    select: { id: true, name: true, bio: true, specialty: true, avatarUrl: true, userId: true },
+    // userId removido: identificador interno del usuario, no debe exponerse en
+    // respuestas públicas. El cliente no lo consume.
+    select: { id: true, name: true, bio: true, specialty: true, avatarUrl: true },
   },
   services: {
     select: { id: true, name: true, description: true, duration: true, price: true, categoryId: true },

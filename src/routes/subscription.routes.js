@@ -2,7 +2,7 @@ const router = require('express').Router();
 const prisma = require('../config/database');
 const { authenticate, requireRole } = require('../middleware/auth');
 const subscriptionService = require('../services/subscription.service');
-const { getPlanLimit } = require('../config/plans');
+const { getPlanLimit, getPlanRank } = require('../config/plans');
 
 const VALID_BUSINESS_PLANS = ['team', 'studio', 'enterprise'];
 const VALID_PRO_PLANS     = ['solo'];
@@ -35,6 +35,13 @@ router.patch('/business/me/plan', authenticate, requireRole('BUSINESS_OWNER'), a
       include: { professionals: { select: { id: true } }, subscription: true },
     });
     if (!biz) return res.status(404).json({ error: 'Negocio no encontrado' });
+
+    // Subir a un tier superior requiere pago aprobado (webhook Wompi). Este
+    // endpoint solo permite downgrade o mantener el mismo tier; el upgrade real
+    // se aplica cuando el pago se confirma.
+    if (getPlanRank(plan) > getPlanRank(biz.plan)) {
+      return res.status(400).json({ error: 'Para subir de plan debes completar el pago. El plan superior se activa al confirmarse el pago.' });
+    }
 
     const newLimit = getPlanLimit(plan);
     const currentCount = biz.professionals.length;

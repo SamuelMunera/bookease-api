@@ -1,5 +1,21 @@
 const prisma = require('../config/database');
 
+// "Hoy" (YYYY-MM-DD) y minuto-del-día actual en una timezone dada. Se usa para
+// no ofrecer slots cuya hora de inicio ya pasó cuando la fecha consultada es hoy.
+function nowInTimezone(timezone) {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  }).formatToParts(now).reduce((acc, p) => { acc[p.type] = p.value; return acc; }, {});
+  const dateStr = `${parts.year}-${parts.month}-${parts.day}`;
+  // '24' puede aparecer a medianoche en algunos entornos; normalizar a 0.
+  const hour = parts.hour === '24' ? 0 : Number(parts.hour);
+  const minutes = hour * 60 + Number(parts.minute);
+  return { dateStr, minutes };
+}
+
 function toMinutes(time) {
   const [h, m] = time.split(':').map(Number);
   return h * 60 + m;
@@ -48,13 +64,22 @@ async function getAvailableSlots(professionalId, serviceId, dateStr) {
 
   // 2. Professional custom duration + buffer
   const [proRow, svcConfig] = await Promise.all([
-    prisma.professional.findUnique({ where: { id: professionalId }, select: { bufferTime: true } }),
+    prisma.professional.findUnique({
+      where: { id: professionalId },
+      select: { bufferTime: true, timezone: true, business: { select: { timezone: true } } },
+    }),
     prisma.professionalServiceConfig.findUnique({
       where: { professionalId_serviceId: { professionalId, serviceId } },
     }),
   ]);
   const effectiveDuration = svcConfig?.customDuration ?? service.duration;
   const bufferTime = proRow?.bufferTime ?? 0;
+
+  // Si la fecha consultada es HOY en la timezone del negocio/profesional, se
+  // descartan los slots cuya hora de inicio ya pasó. Días futuros no se afectan.
+  const timezone = proRow?.business?.timezone ?? proRow?.timezone ?? 'America/Bogota';
+  const { dateStr: todayStr, minutes: nowMinutes } = nowInTimezone(timezone);
+  const minStartMinutes = dateStr === todayStr ? nowMinutes : -Infinity;
 
   // 3. Check week-specific override first, then recurring schedule
   const weekStart = parseLocalDate(getWeekStartStr(dateStr));
@@ -100,6 +125,7 @@ async function getAvailableSlots(professionalId, serviceId, dateStr) {
   const slots = [];
   for (const { start: blockStart, end: blockEnd } of availBlocks) {
     for (let start = blockStart; start + effectiveDuration <= blockEnd; start += step) {
+      if (start < minStartMinutes) continue; // slot ya pasó (solo aplica si es hoy)
       const end = start + effectiveDuration;
       if (!blocked.some((b) => overlaps(start, end, b.start, b.end))) {
         slots.push({ startTime: toTime(start), endTime: toTime(end) });

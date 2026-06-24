@@ -116,11 +116,19 @@ async function updatePlan(req, res) {
     if (!VALID_PLANS.includes(plan)) return res.status(400).json({ error: 'Plan inválido' });
     const prisma = require('../config/database');
     const subscriptionService = require('../services/subscription.service');
+    const { getPlanRank } = require('../config/plans');
     const business = await prisma.business.findFirst({
       where: { ownerId: req.user.id },
       include: { subscription: true },
     });
     if (!business) return res.status(404).json({ error: 'Negocio no encontrado' });
+
+    // Upgrades a un tier superior solo se habilitan tras un pago aprobado
+    // (webhook Wompi). Aquí solo se permite downgrade o mantener el mismo tier.
+    if (getPlanRank(plan) > getPlanRank(business.plan)) {
+      return res.status(400).json({ error: 'Para subir de plan debes completar el pago. El plan superior se activa al confirmarse el pago.' });
+    }
+
     const updated = await prisma.business.update({ where: { id: business.id }, data: { plan } });
     if (business.subscription) {
       await subscriptionService.changePlan(business.subscription.id, plan);

@@ -89,6 +89,7 @@ router.post('/wompi/checkout', authenticate, async (req, res) => {
     // se aplica como máximo UN descuento por factura. Si ya hubo descuento de
     // promotor, no se apila ningún descuento de referidos.
     let referrerCreditApplied = false;
+    let referredDiscountApplied = false;
     if (businessId && !promoterDiscountApplied) {
       // (a) 20% primer mes para el negocio REFERIDO (aún sin aplicar).
       const referredRecord = await prisma.businessReferral.findUnique({
@@ -97,6 +98,7 @@ router.post('/wompi/checkout', authenticate, async (req, res) => {
       });
       if (referredRecord && !referredRecord.referredDiscountApplied) {
         amountInCents = Math.round(amountInCents * (1 - referralService.REFERRED_DISCOUNT / 100));
+        referredDiscountApplied = true;
       } else {
         // (b) crédito de 20% del REFERIDOR (etapa 2). Solo uno por factura.
         const biz = await prisma.business.findUnique({
@@ -125,6 +127,8 @@ router.post('/wompi/checkout', authenticate, async (req, res) => {
       currency,
       signature,
       promoterDiscountApplied,
+      referredDiscountApplied,
+      referrerCreditApplied,
       publicKey: wompi.PUBLIC_KEY,
       checkoutUrl: wompi.CHECKOUT_URL,
       env: wompi.ENV,
@@ -140,6 +144,20 @@ router.get('/wompi/transactions/:reference', authenticate, async (req, res) => {
   try {
     const payment = await prisma.payment.findUnique({ where: { reference: req.params.reference } });
     if (!payment) return res.status(404).json({ error: 'Pago no encontrado' });
+
+    // Verifica pertenencia: el pago debe ser del negocio del usuario (owner) o
+    // de su perfil profesional. Si no pertenece, se responde 404 para no filtrar
+    // la existencia de referencias ajenas.
+    let owns = false;
+    if (payment.businessId) {
+      const biz = await prisma.business.findUnique({ where: { id: payment.businessId }, select: { ownerId: true } });
+      owns = biz?.ownerId === req.user.id;
+    } else if (payment.professionalId) {
+      const pro = await prisma.professional.findUnique({ where: { id: payment.professionalId }, select: { userId: true } });
+      owns = pro?.userId === req.user.id;
+    }
+    if (!owns) return res.status(404).json({ error: 'Pago no encontrado' });
+
     res.json({ reference: payment.reference, plan: payment.plan, status: payment.status });
   } catch {
     res.status(500).json({ error: 'Internal server error' });
