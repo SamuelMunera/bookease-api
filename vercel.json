@@ -1,4 +1,5 @@
 {
+  "buildCommand": "prisma migrate deploy && prisma generate",
   "rewrites": [
     { "source": "/(.*)", "destination": "/api/index" }
   ],
