@@ -7,6 +7,7 @@ const { getResend, FROM } = require('../config/email');
 const { businessVerifyEmail } = require('../utils/emailTemplates');
 const subscriptionService = require('./subscription.service');
 const referralService = require('./referral.service');
+const { computeServicePricing, getActivePromotions } = require('../utils/pricing');
 
 const APP_URL = process.env.APP_URL || 'http://localhost:5173';
 
@@ -36,6 +37,14 @@ const BUSINESS_EDITABLE = [
   'name', 'description', 'address', 'city', 'phone', 'category',
   'timezone', 'state', 'zipCode', 'cancelMinHours',
 ];
+
+// Accepts a plain object (returned as-is) or null/undefined (returned null).
+// Arrays, primitives and other non-plain values are rejected -> null.
+function sanitizeTheme(v) {
+  if (v == null) return null;
+  if (typeof v !== 'object' || Array.isArray(v)) return null;
+  return v;
+}
 
 function buildNorms(data) {
   return {
@@ -310,11 +319,36 @@ async function findAll({ category, city, lat, lng, radius, time, userCountry } =
   });
 }
 
+// Enriches each service of a business with computed `pricing` based on the
+// business's active promotions. Mutates and returns the business object; the
+// original `price` field on each service is preserved untouched.
+function enrichServicePricing(business, promotions, now = new Date()) {
+  if (!business || !Array.isArray(business.services)) return business;
+  const active = getActivePromotions(promotions, now);
+  business.services = business.services.map((svc) => ({
+    ...svc,
+    pricing: computeServicePricing(svc, active, now),
+  }));
+  return business;
+}
+
 async function findById(id) {
-  return prisma.business.findFirst({
+  const business = await prisma.business.findFirst({
     where: { id, status: 'ACTIVE' },
     select: PUBLIC_BUSINESS_SELECT,
   });
+  if (!business) return business;
+
+  const now = new Date();
+  const promotions = await prisma.promotion.findMany({
+    where: {
+      businessId: id,
+      isActive: true,
+      startDate: { lte: now },
+      endDate: { gte: now },
+    },
+  });
+  return enrichServicePricing(business, promotions, now);
 }
 
 async function getMyBusiness(ownerId) {
@@ -337,6 +371,17 @@ async function updateProfile(ownerId, data) {
     'cancelMinHours', 'timezone', 'state', 'zipCode',
   ];
   const clean = Object.fromEntries(Object.entries(data).filter(([k]) => allowed.includes(k)));
+
+  // Theme + appointment-verification settings (owner-editable).
+  // themeLight/themeDark must be a plain object or null; anything else is ignored.
+  if ('themeLight' in data) clean.themeLight = sanitizeTheme(data.themeLight);
+  if ('themeDark'  in data) clean.themeDark  = sanitizeTheme(data.themeDark);
+  if ('apptVerifyEnabled' in data) clean.apptVerifyEnabled = Boolean(data.apptVerifyEnabled);
+  if ('apptVerifyHoursBefore' in data) {
+    let h = parseInt(data.apptVerifyHoursBefore, 10);
+    if (!Number.isFinite(h)) h = 2;
+    clean.apptVerifyHoursBefore = Math.min(72, Math.max(1, h));
+  }
 
   // Address validation when address-related fields change
   if (clean.address || clean.city || clean.state || clean.zipCode) {

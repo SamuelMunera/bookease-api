@@ -104,6 +104,11 @@ model Business {
   promoterId         String?
 
   // Business-to-business referral program
+  themeLight            Json?
+  themeDark             Json?
+  apptVerifyEnabled     Boolean  @default(false)
+  apptVerifyHoursBefore Int      @default(2)
+
   referralCode          String?  @unique   // código propio para referir otros negocios
   referredByCode        String?            // código que usó al registrarse (si aplica)
   referrerBusinessId    String?            // negocio que lo refirió (resuelto)
@@ -391,6 +396,7 @@ model Booking {
   source         BookingSource @default(ONLINE)
   clientAddress  String?
   guestName      String?
+  verificationSentAt DateTime?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 

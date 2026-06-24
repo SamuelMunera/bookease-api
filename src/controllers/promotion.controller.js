@@ -146,4 +146,58 @@ async function getPublicPromotions(req, res) {
   }
 }
 
-module.exports = { getMyPromotions, createPromotion, updatePromotion, deletePromotion, getPublicPromotions };
+// Public endpoint: businesses that currently have at least one active,
+// in-date promotion. Used for the hero/discovery carousel. Returns minimal
+// card data plus a summary of the most-recent active promotion.
+async function getPromotedBusinesses(req, res) {
+  try {
+    const now = new Date();
+    const promotions = await prisma.promotion.findMany({
+      where: {
+        isActive: true,
+        startDate: { lte: now },
+        endDate:   { gte: now },
+        business:  { is: { status: 'ACTIVE' } },
+      },
+      orderBy: { startDate: 'desc' },
+      include: {
+        business: {
+          select: {
+            id: true, name: true, city: true, category: true,
+            logoUrl: true, coverUrl: true, accentColor: true, status: true,
+          },
+        },
+      },
+    });
+
+    // One card per business, keeping the first (most-recent) active promo.
+    const seen = new Map();
+    for (const promo of promotions) {
+      const biz = promo.business;
+      if (!biz || biz.status !== 'ACTIVE' || seen.has(biz.id)) continue;
+      seen.set(biz.id, {
+        id: biz.id,
+        name: biz.name,
+        city: biz.city,
+        category: biz.category,
+        logoUrl: biz.logoUrl,
+        coverUrl: biz.coverUrl,
+        accentColor: biz.accentColor,
+        promotion: {
+          id: promo.id,
+          title: promo.title,
+          discountType: promo.discountType,
+          discountValue: promo.discountValue != null ? Number(promo.discountValue) : null,
+          customPrice: promo.customPrice != null ? Number(promo.customPrice) : null,
+        },
+      });
+    }
+
+    res.json([...seen.values()]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+module.exports = { getMyPromotions, createPromotion, updatePromotion, deletePromotion, getPublicPromotions, getPromotedBusinesses };

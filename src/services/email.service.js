@@ -154,6 +154,57 @@ function reminderHtml({ name, service, date, startTime, endTime, proOrClient, is
   `);
 }
 
+/* ── Appointment verification ─────────────────────────────── */
+// Neutral, inline-styled template. Uses a fixed light background with dark
+// text so it stays legible regardless of the email client's light/dark mode,
+// without relying on prefers-color-scheme.
+function verificationHtml({ clientName, business, service, proName, date, startTime, endTime, isHome, address }) {
+  const rows = [
+    ['Negocio',     escHtml(business)],
+    ['Servicio',    escHtml(service)],
+    ['Profesional', escHtml(proName)],
+    ['Fecha',       escHtml(date)],
+    ['Hora',        endTime ? `${escHtml(startTime)} – ${escHtml(endTime)}` : escHtml(startTime)],
+    ...(isHome && address ? [['Dirección', escHtml(address)]] : []),
+    ['Modalidad',   isHome ? 'A domicilio' : 'En local'],
+  ];
+  const rowHtml = rows.map(([l, v], i) =>
+    `<tr><td style="padding:10px 14px;font-size:14px;color:#6b7280;width:38%;${i ? 'border-top:1px solid #e5e7eb;' : ''}">${l}</td>`
+    + `<td style="padding:10px 14px;font-size:14px;color:#111827;font-weight:600;${i ? 'border-top:1px solid #e5e7eb;' : ''}">${v}</td></tr>`
+  ).join('');
+
+  return `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f4f4f8;">
+<div style="max-width:520px;margin:32px auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:16px;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;">
+  <div style="padding:24px 32px;border-bottom:1px solid #e5e7eb;background:#ffffff;">
+    <div style="font-size:22px;font-weight:800;color:#111827;letter-spacing:-0.03em;">Slot<span style="color:#b8860b;">ly</span></div>
+  </div>
+  <div style="padding:28px 32px;">
+    <span style="display:inline-block;padding:4px 12px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;background:#fef3c7;color:#92400e;border:1px solid #fde68a;">Confirma tu asistencia</span>
+    <h1 style="font-size:20px;font-weight:700;margin:14px 0 8px;color:#111827;">Tu cita está próxima</h1>
+    <p style="font-size:14px;color:#4b5563;margin:0 0 22px;line-height:1.5;">Hola <strong style="color:#111827;">${escHtml(clientName)}</strong>, confirma que asistirás a tu próxima cita. Si no puedes asistir, por favor cancélala con tiempo.</p>
+    <table style="width:100%;border-collapse:collapse;margin:0 0 24px;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">${rowHtml}</table>
+    <a href="${APP_URL}/my-bookings" style="display:block;padding:13px 24px;background:#b8860b;color:#ffffff;text-decoration:none;border-radius:10px;font-weight:700;font-size:14px;text-align:center;">Ver mis reservas</a>
+  </div>
+  <div style="padding:20px 32px;border-top:1px solid #e5e7eb;font-size:12px;color:#9ca3af;text-align:center;line-height:1.6;">Slotly · No respondas a este correo.</div>
+</div>
+</body></html>`;
+}
+
+async function sendAppointmentVerification(booking) {
+  const { clientName, clientEmail, proName, service, date, startTime, endTime, isHome, address } = extract(booking);
+  const business = booking.professional?.business?.name || booking.business?.name || '—';
+  const jobs = [];
+  if (isReal(clientEmail)) {
+    jobs.push({
+      bookingId: booking.id, kind: 'verification:client', recipient: clientEmail,
+      subject: `Confirma tu cita de ${service}`,
+      html: verificationHtml({ clientName, business, service, proName, date, startTime, endTime, isHome, address }),
+    });
+  }
+  await runBatch('verification', booking.id, jobs);
+}
+
 /* ── Feedback / PQRS ──────────────────────────────────────── */
 const FEEDBACK_EMAIL = process.env.FEEDBACK_EMAIL || 'slotly22@gmail.com';
 
@@ -283,4 +334,4 @@ async function sendBookingReminder(booking) {
   await runBatch('reminder', booking.id, jobs);
 }
 
-module.exports = { sendBookingConfirmation, sendBookingCancellation, sendBookingReminder, sendFeedbackNotification };
+module.exports = { sendBookingConfirmation, sendBookingCancellation, sendBookingReminder, sendFeedbackNotification, sendAppointmentVerification };

@@ -8,7 +8,8 @@ router.post('/me',        authenticate, requireRole('BUSINESS_OWNER'), ctrl.crea
 router.patch('/me/:id',   authenticate, requireRole('BUSINESS_OWNER'), ctrl.updatePromotion);
 router.delete('/me/:id',  authenticate, requireRole('BUSINESS_OWNER'), ctrl.deletePromotion);
 
-// Public route
+// Public routes
+router.get('/promoted-businesses', ctrl.getPromotedBusinesses);
 router.get('/:id/active', ctrl.getPublicPromotions);
 
 module.exports = router;

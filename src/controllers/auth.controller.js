@@ -9,12 +9,18 @@ async function register(req, res) {
   }
 }
 
+const VALID_AUDIENCES = ['client', 'pro', 'admin'];
+
 async function login(req, res) {
   try {
-    const result = await authService.login(req.body);
+    const { email, password, audience } = req.body;
+    if (audience !== undefined && !VALID_AUDIENCES.includes(audience)) {
+      return res.status(400).json({ error: 'audience inválido' });
+    }
+    const result = await authService.login({ email, password, audience });
     res.json(result);
   } catch (err) {
-    res.status(401).json({ error: err.message });
+    res.status(err.status || 401).json({ error: err.message });
   }
 }
 

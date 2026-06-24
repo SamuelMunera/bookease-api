@@ -41,13 +41,31 @@ async function register({ name, email, password, role, phone, country }) {
   return { user, token };
 }
 
-async function login({ email, password }) {
+// Mapea cada "audience" (acceso del frontend) a los roles permitidos.
+const AUDIENCE_ROLES = {
+  client: ['CLIENT'],
+  pro: ['BUSINESS_OWNER', 'PROFESSIONAL'],
+  admin: ['ADMIN'],
+};
+
+async function login({ email, password, audience }) {
   const normalizedEmail = typeof email === 'string' ? email.toLowerCase().trim() : '';
   const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
   if (!user) throw new Error('Invalid credentials');
 
   const valid = await bcrypt.compare(password, user.password);
   if (!valid) throw new Error('Invalid credentials');
+
+  // Si se especifica audience, el rol del usuario debe corresponder a ese acceso.
+  // Sin audience se mantiene compatibilidad con llamadas existentes.
+  if (audience) {
+    const allowed = AUDIENCE_ROLES[audience];
+    if (!allowed || !allowed.includes(user.role)) {
+      const err = new Error('Esta cuenta no corresponde a este acceso. Usa el inicio de sesión correcto.');
+      err.status = 403;
+      throw err;
+    }
+  }
 
   const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRES_IN || '7d',
