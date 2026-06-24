@@ -3,6 +3,7 @@ const router = require('express').Router();
 const { authenticate, requireRole } = require('../middleware/auth');
 const prisma = require('../config/database');
 const subscriptionService = require('../services/subscription.service');
+const adminFinanceService = require('../services/adminFinance.service');
 
 const VALID_COURTESY_PLANS = ['solo', 'team', 'studio', 'enterprise'];
 // Una suscripción activada hace menos de este tiempo se marca "Recién pagó".
@@ -311,6 +312,48 @@ router.post('/courtesy-codes', async (req, res) => {
     res.status(201).json(courtesy);
   } catch (err) {
     res.status(400).json({ error: err.message || 'Error al generar código' });
+  }
+});
+
+// ── Finanzas & Billing ──────────────────────────────────────────────────────
+// Dashboard de finanzas admin: MRR/ARR, suscripciones, descuentos por
+// referidos y comisiones a promotores (estas últimas SOLO informativas — no
+// hay cobro ni pasarela hacia promotores).
+
+router.get('/finance/overview', async (_req, res) => {
+  try {
+    res.json(await adminFinanceService.getOverview());
+  } catch {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.get('/finance/subscriptions', async (req, res) => {
+  try {
+    res.json(await adminFinanceService.getSubscriptions(req.query));
+  } catch {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.get('/finance/discounts', async (req, res) => {
+  try {
+    const commissionService = require('../services/commission.service');
+    res.json(await commissionService.getDiscountBreakdown({ from: req.query.from, to: req.query.to }));
+  } catch {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.get('/finance/commissions', async (req, res) => {
+  try {
+    const commissionService = require('../services/commission.service');
+    res.json(await commissionService.getPromoterCommissions({
+      year: Number(req.query.year) || undefined,
+      month: Number(req.query.month) || undefined,
+    }));
+  } catch {
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
