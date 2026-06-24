@@ -262,16 +262,36 @@ async function googleAuth(accessToken, role = 'CLIENT') {
         },
         select: { id: true, name: true, email: true, role: true },
       });
-      if (effectiveRole === 'PROFESSIONAL') {
-        await prisma.professional.create({ data: { name, userId: user.id } });
+    }
+  }
+
+  // Linking seguro de contexto profesional sobre una identidad Google (nueva o
+  // existente, p.ej. un dueño de negocio): Google ya prueba la propiedad del
+  // correo, así que no se requiere contraseña. Misma persona, mismo email,
+  // distinto contexto — sin duplicar la cuenta.
+  if (effectiveRole === 'PROFESSIONAL') {
+    const prof = await prisma.professional.findUnique({ where: { userId: user.id }, select: { id: true } });
+    if (!prof) {
+      const created = await prisma.professional.create({ data: { name, userId: user.id }, select: { id: true } });
+      try {
+        const subscriptionService = require('./subscription.service');
+        await subscriptionService.createForProfessional(created.id, 'solo', 'CO');
+      } catch (e) {
+        console.error('[googleAuth] subscription create:', e.message);
       }
     }
   }
 
-  const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRES_IN || '7d',
-  });
-  return { user, token, isNew };
+  // El contexto activo es el solicitado si la identidad realmente lo posee; si
+  // no, su rol primario. El token sigue llevando un único rol activo.
+  const contexts = await getUserContexts(user);
+  const activeRole = contexts.includes(effectiveRole) ? effectiveRole : (contexts[0] || user.role);
+
+  return {
+    user: { id: user.id, name: user.name, email: user.email, role: activeRole, availableRoles: contexts },
+    token: signToken(user.id, activeRole),
+    isNew,
+  };
 }
 
 module.exports = { register, login, changePassword, forgotPassword, resetPassword, googleAuth, switchContext, getUserContexts };
