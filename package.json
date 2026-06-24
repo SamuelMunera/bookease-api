@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "nodemon src/index.js",
     "start": "node src/index.js",
-    "postinstall": "prisma generate && node prisma/manual/apply-prod-columns.js",
+    "postinstall": "prisma generate && node prisma/manual/apply-prod-columns.js && node prisma/manual/resolve-ledger.js",
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
