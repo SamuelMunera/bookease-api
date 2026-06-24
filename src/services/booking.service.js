@@ -374,17 +374,18 @@ async function createManualBooking({ creatorId, creatorRole, professionalId, ser
       const walkInEmail = pro.businessId
         ? `walkin-${pro.businessId}@slotly.internal`
         : `walkin-pro-${professionalId}@slotly.internal`;
-      client = await prisma.user.findUnique({ where: { email: walkInEmail } });
-      if (!client) {
-        client = await prisma.user.create({
-          data: {
-            name:     'Cliente presencial',
-            email:    walkInEmail,
-            password: await bcrypt.hash(crypto.randomBytes(16).toString('hex'), 12),
-            role:     'CLIENT',
-          },
-        });
-      }
+      // upsert evita la carrera unique-violation si llegan dos reservas
+      // presenciales simultáneas para el mismo negocio (N2-01).
+      client = await prisma.user.upsert({
+        where:  { email: walkInEmail },
+        update: {},
+        create: {
+          name:     'Cliente presencial',
+          email:    walkInEmail,
+          password: await bcrypt.hash(crypto.randomBytes(16).toString('hex'), 12),
+          role:     'CLIENT',
+        },
+      });
     } else {
       const tempPass = crypto.randomBytes(16).toString('hex');
       client = await prisma.user.create({
