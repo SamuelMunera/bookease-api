@@ -246,4 +246,28 @@ async function unlinkBusiness(req, res) {
   } catch (err) { res.status(400).json({ error: err.message }); }
 }
 
-module.exports = { register, getMe, getMyBookings, getMyServices, setMyServices, getMySchedule, setMySchedule, getWeekSchedule, setWeekSchedule, deleteWeekSchedule, getProfessionalServices, create, findByBusiness, findById, findHomeProfessionals, update, remove, getServiceConfigs, saveServiceConfigs, updateBufferTime, updateCancelPolicy, updateProfile, uploadAvatar, unlinkBusiness, getPhotos, uploadPhoto, deletePhoto };
+// ── Dueño que también atiende como profesional ──
+async function getOwnerProfessional(req, res) {
+  try {
+    const data = await professionalService.getOwnerProfessional(req.user.id);
+    res.json(data);
+  } catch (err) { res.status(400).json({ error: err.message }); }
+}
+
+async function activateOwnerProfessional(req, res) {
+  try {
+    const prof = await professionalService.activateOwnerProfessional(req.user.id);
+    res.status(201).json(prof);
+  } catch (err) {
+    res.status(err.status || (err.code === 'PLAN_LIMIT_EXCEEDED' ? 403 : 400)).json({ error: err.message, code: err.code });
+  }
+}
+
+async function setOwnerProfessionalBookable(req, res) {
+  try {
+    const prof = await professionalService.setOwnerProfessionalBookable(req.user.id, req.body?.isBookable);
+    res.json(prof);
+  } catch (err) { res.status(400).json({ error: err.message }); }
+}
+
+module.exports = { register, getMe, getMyBookings, getMyServices, setMyServices, getMySchedule, setMySchedule, getWeekSchedule, setWeekSchedule, deleteWeekSchedule, getProfessionalServices, create, findByBusiness, findById, findHomeProfessionals, update, remove, getServiceConfigs, saveServiceConfigs, updateBufferTime, updateCancelPolicy, updateProfile, uploadAvatar, unlinkBusiness, getPhotos, uploadPhoto, deletePhoto, getOwnerProfessional, activateOwnerProfessional, setOwnerProfessionalBookable };

@@ -5,6 +5,7 @@ const bookingController      = require('../controllers/booking.controller');
 const joinRequestController  = require('../controllers/joinRequest.controller');
 const revenueController      = require('../controllers/revenue.controller');
 const analyticsController    = require('../controllers/analytics.controller');
+const professionalController = require('../controllers/professional.controller');
 const { authenticate, requireRole } = require('../middleware/auth');
 const upload = require('../middleware/upload');
 const { uploadLimiter } = require('../middleware/rateLimiters');
@@ -32,6 +33,11 @@ router.get('/verify-email/:token',            businessController.confirmVerifyEm
 router.get('/me/analytics',                   authenticate, requireRole('BUSINESS_OWNER'), analyticsController.businessAnalytics);
 router.patch('/me/settings',                  authenticate, requireRole('BUSINESS_OWNER'), revenueController.updateBusinessSettings);
 router.patch('/me/plan',                      authenticate, requireRole('BUSINESS_OWNER'), businessController.updatePlan);
+
+// Dueño que también atiende como profesional (misma cuenta, sin segundo login)
+router.get('/me/professional',                authenticate, requireRole('BUSINESS_OWNER'), professionalController.getOwnerProfessional);
+router.post('/me/professional',               authenticate, requireRole('BUSINESS_OWNER'), professionalController.activateOwnerProfessional);
+router.patch('/me/professional',              authenticate, requireRole('BUSINESS_OWNER'), professionalController.setOwnerProfessionalBookable);
 router.post('/check-duplicate', authenticate, requireRole('BUSINESS_OWNER'), businessController.checkDuplicate);
 
 // Gallery

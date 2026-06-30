@@ -118,6 +118,73 @@ async function registerProfessional({ name, email, password, phone, specialty, b
   return { user, token };
 }
 
+/* ── Dueño que también atiende como profesional ───────────────────────────
+ * El dueño usa SU MISMA identidad (userId). Activarse crea un Professional
+ * ligado a su userId dentro de su propio negocio — sin segunda cuenta. Luego
+ * configura disponibilidad/servicios con los endpoints self-service normales
+ * (todos resuelven por userId) y aparece como reservable como cualquier otro.
+ */
+async function getOwnerProfessional(ownerId) {
+  const business = await prisma.business.findFirst({ where: { ownerId }, select: { id: true } });
+  if (!business) return { business: null, professional: null };
+  const professional = await prisma.professional.findUnique({
+    where: { userId: ownerId },
+    select: { id: true, name: true, businessId: true, isBookable: true, avatarUrl: true, specialty: true },
+  });
+  return { business, professional: professional || null };
+}
+
+async function activateOwnerProfessional(ownerId) {
+  const [owner, business] = await Promise.all([
+    prisma.user.findUnique({ where: { id: ownerId }, select: { name: true } }),
+    prisma.business.findFirst({ where: { ownerId }, include: { professionals: { select: { id: true } } } }),
+  ]);
+  if (!business) throw new Error('No tienes un negocio. Crea tu negocio antes de activarte como profesional.');
+
+  const existing = await prisma.professional.findUnique({ where: { userId: ownerId } });
+  if (existing) {
+    // Idempotente: ya tiene perfil profesional.
+    if (existing.businessId && existing.businessId !== business.id) {
+      const err = new Error('Tu identidad ya tiene un perfil profesional en otro negocio.');
+      err.status = 409;
+      throw err;
+    }
+    // Si existía sin negocio (profesional independiente), se vincula a este y se
+    // hace visible. Si ya estaba en este negocio, solo se asegura que sea visible.
+    return prisma.professional.update({
+      where: { id: existing.id },
+      data: { businessId: business.id, isBookable: true },
+      select: { id: true, name: true, businessId: true, isBookable: true },
+    });
+  }
+
+  const limit = getPlanLimit(business.plan ?? 'team');
+  if (business.professionals.length >= limit) {
+    const err = new Error(`El plan del negocio permite máximo ${limit} profesional${limit !== 1 ? 'es' : ''}. Actualiza el plan para agregar más.`);
+    err.code = 'PLAN_LIMIT_EXCEEDED';
+    throw err;
+  }
+
+  return prisma.professional.create({
+    data: { name: owner?.name || 'Profesional', userId: ownerId, businessId: business.id, isBookable: true },
+    select: { id: true, name: true, businessId: true, isBookable: true },
+  });
+}
+
+// Mostrar/ocultar al dueño-profesional en la vista pública de reservas, sin
+// borrar su perfil, horarios ni servicios (reversible). No afecta su rol/auth.
+async function setOwnerProfessionalBookable(ownerId, isBookable) {
+  const business = await prisma.business.findFirst({ where: { ownerId }, select: { id: true } });
+  if (!business) throw new Error('No tienes un negocio.');
+  const prof = await prisma.professional.findUnique({ where: { userId: ownerId }, select: { id: true, businessId: true } });
+  if (!prof || prof.businessId !== business.id) throw new Error('Aún no estás activado como profesional en tu negocio.');
+  return prisma.professional.update({
+    where: { id: prof.id },
+    data: { isBookable: Boolean(isBookable) },
+    select: { id: true, name: true, businessId: true, isBookable: true },
+  });
+}
+
 async function getMyProfile(userId) {
   return prisma.professional.findUnique({
     where: { userId },
@@ -274,8 +341,9 @@ async function create(businessId, data) {
 
 async function findByBusiness(businessId) {
   // Solo campos públicos: nunca exponer userId, country, normalizaciones, etc.
+  // isBookable=false oculta al profesional (p.ej. dueño que pausó su agenda).
   return prisma.professional.findMany({
-    where: { businessId },
+    where: { businessId, isBookable: true },
     select: { id: true, name: true, bio: true, specialty: true, avatarUrl: true },
   });
 }
@@ -443,4 +511,4 @@ async function unlinkBusiness(userId) {
   });
 }
 
-module.exports = { findHomeProfessionals, registerProfessional, getMyProfile, getMyBookings, getMyServices, setMyServices, getMySchedule, setMySchedule, getWeekSchedule, setWeekSchedule, deleteWeekSchedule, create, findByBusiness, findById, update, remove, getServiceConfigs, saveServiceConfigs, updateBufferTime, updateCancelPolicy, updateProfile, unlinkBusiness, getPhotos, addPhoto, deletePhoto };
+module.exports = { findHomeProfessionals, registerProfessional, getMyProfile, getMyBookings, getMyServices, setMyServices, getMySchedule, setMySchedule, getWeekSchedule, setWeekSchedule, deleteWeekSchedule, create, findByBusiness, findById, update, remove, getServiceConfigs, saveServiceConfigs, updateBufferTime, updateCancelPolicy, updateProfile, unlinkBusiness, getPhotos, addPhoto, deletePhoto, getOwnerProfessional, activateOwnerProfessional, setOwnerProfessionalBookable };

@@ -25,6 +25,9 @@ const PUBLIC_BUSINESS_SELECT = {
   professionals: {
     // userId removido: identificador interno del usuario, no debe exponerse en
     // respuestas públicas. El cliente no lo consume.
+    // isBookable=false oculta al profesional del perfil público (dueño que aún
+    // no se activa para reservas o que pausó su agenda).
+    where: { isBookable: true },
     select: { id: true, name: true, bio: true, specialty: true, avatarUrl: true },
   },
   services: {
