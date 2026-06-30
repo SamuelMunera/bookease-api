@@ -119,7 +119,11 @@ async function createBooking({ clientId, professionalId, serviceId, date, startT
   ));
 
 
-  emailService.sendBookingConfirmation(booking).catch(e => console.error('[email] confirmation:', e.message));
+  // IMPORTANTE: se espera el envío DENTRO del ciclo de la petición. En serverless
+  // (Vercel) la función se congela al responder, así que un envío fire-and-forget
+  // nunca llega a completarse y el correo no sale. El .catch evita que un fallo de
+  // Resend rompa la reserva ya confirmada.
+  await emailService.sendBookingConfirmation(booking).catch(e => console.error('[email] confirmation:', e.message));
   return booking;
 }
 
@@ -171,7 +175,7 @@ async function cancelBooking(id, clientId) {
     data: { status: 'CANCELLED' },
     include: BOOKING_INCLUDE,
   });
-  emailService.sendBookingCancellation(cancelled).catch(e => console.error('[email] cancellation:', e.message));
+  await emailService.sendBookingCancellation(cancelled).catch(e => console.error('[email] cancellation:', e.message));
   return cancelled;
 }
 
@@ -207,7 +211,7 @@ async function cancelBookingAsOwner(id, ownerId) {
     data: { status: 'CANCELLED' },
     include: BOOKING_INCLUDE,
   });
-  emailService.sendBookingCancellation(cancelled).catch(e => console.error('[email] cancellation:', e.message));
+  await emailService.sendBookingCancellation(cancelled).catch(e => console.error('[email] cancellation:', e.message));
   return cancelled;
 }
 

@@ -108,7 +108,9 @@ async function createHomeBooking({ clientId, professionalId, homeServiceId, date
     { isolationLevel: 'Serializable' }
   ));
 
-  emailService.sendBookingConfirmation(booking).catch(e => console.error('[email] home confirmation:', e.message));
+  // Awaited a propósito: en serverless un envío fire-and-forget no se completa
+  // tras responder. El .catch evita romper la reserva si Resend falla.
+  await emailService.sendBookingConfirmation(booking).catch(e => console.error('[email] home confirmation:', e.message));
   return booking;
 }
 
@@ -124,7 +126,7 @@ async function cancelHomeBooking(id, clientId) {
     data: { status: 'CANCELLED' },
     include: HOME_BOOKING_INCLUDE,
   });
-  emailService.sendBookingCancellation(cancelled).catch(e => console.error('[email] home cancellation:', e.message));
+  await emailService.sendBookingCancellation(cancelled).catch(e => console.error('[email] home cancellation:', e.message));
   return cancelled;
 }
 
