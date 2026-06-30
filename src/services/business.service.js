@@ -21,6 +21,7 @@ const PUBLIC_BUSINESS_SELECT = {
   // ownerId se conserva: el cliente (BusinessAgendaPage) lo usa para filtrar los
   // negocios propios del owner autenticado (b.ownerId === user.id).
   ownerId: true, plan: true, paymentGateway: true, showRevenueToProf: true,
+  reviewsPublic: true, apptVerifyEnabled: true, apptVerifyHoursBefore: true,
   professionals: {
     // userId removido: identificador interno del usuario, no debe exponerse en
     // respuestas públicas. El cliente no lo consume.
@@ -379,6 +380,7 @@ async function updateProfile(ownerId, data) {
   if ('themeLight' in data) clean.themeLight = sanitizeTheme(data.themeLight);
   if ('themeDark'  in data) clean.themeDark  = sanitizeTheme(data.themeDark);
   if ('apptVerifyEnabled' in data) clean.apptVerifyEnabled = Boolean(data.apptVerifyEnabled);
+  if ('reviewsPublic' in data) clean.reviewsPublic = Boolean(data.reviewsPublic);
   if ('apptVerifyHoursBefore' in data) {
     let h = parseInt(data.apptVerifyHoursBefore, 10);
     if (!Number.isFinite(h)) h = 2;

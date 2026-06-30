@@ -108,6 +108,7 @@ model Business {
   themeDark             Json?
   apptVerifyEnabled     Boolean  @default(false)
   apptVerifyHoursBefore Int      @default(2)
+  reviewsPublic         Boolean  @default(true)
 
   referralCode          String?  @unique   // código propio para referir otros negocios
   referredByCode        String?            // código que usó al registrarse (si aplica)

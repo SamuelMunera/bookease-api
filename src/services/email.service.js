@@ -27,6 +27,11 @@ function extract(booking) {
     clientEmail: booking.client?.email,
     proName:     booking.professional?.name || '—',
     proEmail:    booking.professional?.user?.email,
+    // Correo del negocio = correo del dueño (Business no tiene email propio;
+    // el contacto del negocio es su owner User). Imprescindible para que las
+    // reservas lleguen al negocio aunque el profesional no tenga cuenta/correo.
+    businessName:  booking.professional?.business?.name,
+    businessEmail: booking.professional?.business?.owner?.email,
     service:     booking.service?.name || booking.homeService?.name || '—',
     date:        fmtDate(booking.date),
     startTime:   booking.startTime,
@@ -279,8 +284,28 @@ async function runBatch(kind, bookingId, jobs) {
   }
 }
 
+/**
+ * Resolves the unique, real, business-side recipients for a booking.
+ * Includes the professional's account email AND the business owner's email
+ * (the business has no email column of its own — its contact is the owner).
+ * Deduplicated, and never includes the client's own address.
+ */
+function businessRecipients(clientEmail, ...emails) {
+  const client = (clientEmail || '').toLowerCase();
+  const seen = new Set();
+  const out = [];
+  for (const e of emails) {
+    if (!isReal(e)) continue;
+    const key = e.toLowerCase();
+    if (key === client || seen.has(key)) continue;
+    seen.add(key);
+    out.push(e);
+  }
+  return out;
+}
+
 async function sendBookingConfirmation(booking) {
-  const { clientName, clientEmail, proName, proEmail, service, date, startTime, endTime, isHome, address } = extract(booking);
+  const { clientName, clientEmail, proName, proEmail, businessEmail, service, date, startTime, endTime, isHome, address } = extract(booking);
   const jobs = [];
 
   if (isReal(clientEmail)) {
@@ -290,18 +315,24 @@ async function sendBookingConfirmation(booking) {
       html: confirmHtml({ to:'client', name:clientName, service, date, startTime, endTime, proOrClient:proName, isHome, address }),
     });
   }
-  if (isReal(proEmail)) {
+  // Lado negocio: profesional + dueño del negocio (deduplicados).
+  for (const recipient of businessRecipients(clientEmail, proEmail, businessEmail)) {
     jobs.push({
-      bookingId: booking.id, kind: 'confirmation:pro', recipient: proEmail,
+      bookingId: booking.id, kind: 'confirmation:business', recipient,
       subject: `Nueva reserva – ${service}`,
       html: confirmHtml({ to:'pro', name:proName, service, date, startTime, endTime, proOrClient:clientName, isHome, address }),
     });
   }
+  console.log('[email] RESOLVED', JSON.stringify({
+    bookingId: booking.id, kind: 'confirmation',
+    client: isReal(clientEmail) ? clientEmail : null,
+    business: businessRecipients(clientEmail, proEmail, businessEmail),
+  }));
   await runBatch('confirmation', booking.id, jobs);
 }
 
 async function sendBookingCancellation(booking) {
-  const { clientName, clientEmail, proName, proEmail, service, date, startTime } = extract(booking);
+  const { clientName, clientEmail, proName, proEmail, businessEmail, service, date, startTime } = extract(booking);
   const jobs = [];
 
   if (isReal(clientEmail)) {
@@ -311,9 +342,9 @@ async function sendBookingCancellation(booking) {
       html: cancelHtml({ to:'client', name:clientName, service, date, startTime, proOrClient:proName }),
     });
   }
-  if (isReal(proEmail)) {
+  for (const recipient of businessRecipients(clientEmail, proEmail, businessEmail)) {
     jobs.push({
-      bookingId: booking.id, kind: 'cancellation:pro', recipient: proEmail,
+      bookingId: booking.id, kind: 'cancellation:business', recipient,
       subject: `Reserva cancelada – ${service}`,
       html: cancelHtml({ to:'pro', name:proName, service, date, startTime, proOrClient:clientName }),
     });

@@ -1,6 +1,13 @@
 const prisma = require('../config/database');
 
+// Respeta la preferencia del negocio: si el dueño marcó las reseñas como
+// privadas (reviewsPublic = false), la vista pública no recibe ninguna reseña.
 async function getBusinessReviews(businessId) {
+  const business = await prisma.business.findUnique({
+    where: { id: businessId },
+    select: { reviewsPublic: true },
+  });
+  if (business && business.reviewsPublic === false) return [];
   return prisma.review.findMany({
     where: { businessId },
     include: { author: { select: { id: true, name: true } } },
@@ -65,16 +72,23 @@ async function createProfessionalReview(userId, professionalId, { rating, commen
 }
 
 async function getBusinessStats(businessId) {
-  const [reviews, bookingCount] = await Promise.all([
+  const [business, reviews, bookingCount] = await Promise.all([
+    prisma.business.findUnique({ where: { id: businessId }, select: { reviewsPublic: true } }),
     prisma.review.findMany({ where: { businessId }, select: { rating: true } }),
     prisma.booking.count({
       where: { professional: { businessId }, status: { not: 'CANCELLED' } },
     }),
   ]);
+  const reviewsPublic = business ? business.reviewsPublic !== false : true;
+  // Si las reseñas son privadas, ocultamos rating y contador de forma coherente
+  // (no se filtra el número aunque se oculte el listado). bookingCount se mantiene.
+  if (!reviewsPublic) {
+    return { avgRating: null, reviewCount: 0, bookingCount, reviewsPublic: false };
+  }
   const avgRating = reviews.length
     ? Math.round((reviews.reduce((s, r) => s + r.rating, 0) / reviews.length) * 10) / 10
     : null;
-  return { avgRating, reviewCount: reviews.length, bookingCount };
+  return { avgRating, reviewCount: reviews.length, bookingCount, reviewsPublic: true };
 }
 
 async function getProfessionalStats(professionalId) {

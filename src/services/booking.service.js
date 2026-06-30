@@ -7,7 +7,13 @@ const { assertBillingActive } = require('./subscription.service');
 
 const BOOKING_INCLUDE = {
   client: { select: { id: true, name: true, email: true, phone: true } },
-  professional: { select: { id: true, name: true, user: { select: { email: true } } } },
+  professional: {
+    select: {
+      id: true, name: true,
+      user:     { select: { email: true } },
+      business: { select: { name: true, owner: { select: { email: true } } } },
+    },
+  },
   service: { select: { id: true, name: true, duration: true, price: true } },
   homeService: { select: { id: true, name: true, duration: true, price: true, surcharge: true } },
 };
