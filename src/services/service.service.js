@@ -1,4 +1,5 @@
 const prisma = require('../config/database');
+const { computeServicePricing, getActivePromotions } = require('../utils/pricing');
 
 const ALLOWED_FIELDS = ['name', 'description', 'duration', 'price', 'categoryId'];
 
@@ -27,11 +28,22 @@ async function create(businessId, data) {
 }
 
 async function findByBusiness(businessId) {
-  return prisma.service.findMany({
-    where: { businessId },
-    include: { category: { select: { id: true, name: true } } },
-    orderBy: { name: 'asc' },
-  });
+  const now = new Date();
+  const [services, promotions] = await Promise.all([
+    prisma.service.findMany({
+      where: { businessId },
+      include: { category: { select: { id: true, name: true } } },
+      orderBy: { name: 'asc' },
+    }),
+    prisma.promotion.findMany({
+      where: { businessId, isActive: true, startDate: { lte: now }, endDate: { gte: now } },
+    }),
+  ]);
+  // Misma fuente de verdad de precio que la vista pública del negocio: cada
+  // servicio expone `pricing` con el precio promocional vigente. Así el flujo de
+  // reserva NO vuelve al precio full al seleccionar el servicio.
+  const active = getActivePromotions(promotions, now);
+  return services.map((svc) => ({ ...svc, pricing: computeServicePricing(svc, active, now) }));
 }
 
 async function update(id, ownerId, data) {

@@ -33,6 +33,7 @@ function getPeriodRange(period, timezone) {
 
 function buildAnalytics(bookings, priorClientIds) {
   let total = 0, confirmed = 0, completed = 0, cancelled = 0, noShow = 0, pending = 0, revenue = 0;
+  let promoBookings = 0, promoRevenue = 0, grossRevenue = 0;
   const clientsSeen = new Set();
   const hourCounts  = Array(24).fill(0);
   const dayCounts   = Array(7).fill(0);
@@ -52,9 +53,18 @@ function buildAnalytics(bookings, priorClientIds) {
 
     clientsSeen.add(b.clientId);
 
-    const price     = Number(b.service?.price ?? b.homeService?.price ?? 0);
-    const surcharge = Number(b.homeService?.surcharge ?? 0);
-    if (REVENUE_STATUSES.has(b.status)) revenue += price + surcharge;
+    // Fuente única de verdad: el precio realmente reservado (con promo) si existe;
+    // si no (citas viejas), se recompone desde el servicio. Para el precio sellado
+    // el recargo a domicilio ya está incluido, por eso no se vuelve a sumar.
+    const hasReserved = b.price != null;
+    const price     = hasReserved ? Number(b.price) : Number(b.service?.price ?? b.homeService?.price ?? 0);
+    const surcharge = hasReserved ? 0 : Number(b.homeService?.surcharge ?? 0);
+    const original  = b.originalPrice != null ? Number(b.originalPrice) : price;
+    if (REVENUE_STATUSES.has(b.status)) {
+      revenue      += price + surcharge;
+      grossRevenue += original + surcharge;
+      if (b.promoId) { promoBookings++; promoRevenue += price + surcharge; }
+    }
 
     const hour = parseInt((b.startTime || '00:00').split(':')[0], 10);
     hourCounts[hour]++;
@@ -89,7 +99,14 @@ function buildAnalytics(bookings, priorClientIds) {
     .slice(0, 6);
 
   return {
-    summary: { total, confirmed, completed, cancelled, noShow, pending, revenue },
+    summary: {
+      total, confirmed, completed, cancelled, noShow, pending, revenue,
+      // Trazabilidad de promociones: ingreso neto (revenue) vs bruto sin descuento
+      // (grossRevenue), y cuánto/ingreso vino de promos.
+      grossRevenue,
+      promoDiscount: Math.round((grossRevenue - revenue) * 100) / 100,
+      promoBookings, promoRevenue,
+    },
     customers: {
       total: clientsSeen.size,
       new: newClients,
@@ -125,6 +142,7 @@ async function getBusinessAnalytics(ownerId, period = 'month') {
       select: {
         id: true, clientId: true, status: true, startTime: true, date: true,
         serviceId: true, homeServiceId: true, professionalId: true,
+        price: true, originalPrice: true, promoId: true, promoTitle: true,
         professional: { select: { id: true, name: true } },
         service:      { select: { name: true, price: true } },
         homeService:  { select: { name: true, price: true, surcharge: true } },
@@ -152,8 +170,9 @@ async function getBusinessAnalytics(ownerId, period = 'month') {
       total: 0, confirmed: 0, cancelled: 0, noShow: 0, revenue: 0,
     };
     proMap[pid].total++;
-    const p = Number(b.service?.price ?? b.homeService?.price ?? 0)
-            + Number(b.homeService?.surcharge ?? 0);
+    const p = b.price != null
+      ? Number(b.price)
+      : Number(b.service?.price ?? b.homeService?.price ?? 0) + Number(b.homeService?.surcharge ?? 0);
     if (REVENUE_STATUSES.has(b.status)) { proMap[pid].confirmed++; proMap[pid].revenue += p; }
     if (b.status === 'CANCELLED') proMap[pid].cancelled++;
     if (b.status === 'NO_SHOW')   proMap[pid].noShow++;
@@ -189,6 +208,7 @@ async function getProfessionalAnalytics(userId, period = 'month') {
       select: {
         id: true, clientId: true, status: true, startTime: true, date: true,
         serviceId: true, homeServiceId: true,
+        price: true, originalPrice: true, promoId: true, promoTitle: true,
         service:     { select: { name: true, price: true } },
         homeService: { select: { name: true, price: true, surcharge: true } },
       },

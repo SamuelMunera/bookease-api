@@ -9,7 +9,7 @@ const subscriptionService = require('./subscription.service');
 const referralService = require('./referral.service');
 const { computeServicePricing, getActivePromotions } = require('../utils/pricing');
 
-const APP_URL = process.env.APP_URL || 'http://localhost:5173';
+const APP_URL = process.env.APP_URL || process.env.CLIENT_URL || 'https://slotly.com.co';
 
 // Safe fields for public-facing responses.
 // Excluded: joinCode, emailVerifyToken, emailVerifyExpiry, nameNorm, phoneNorm, addressNorm

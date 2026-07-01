@@ -399,6 +399,13 @@ model Booking {
   clientAddress  String?
   guestName      String?
   verificationSentAt DateTime?
+  // Precio realmente reservado (fuente única de verdad). Se calcula en el backend
+  // al crear la cita aplicando la promoción vigente; analytics/revenue lo usan en
+  // vez de recomputar service.price (que ignora promos). Nullable para citas viejas.
+  price          Decimal?      @db.Decimal(10, 2)
+  originalPrice  Decimal?      @db.Decimal(10, 2)
+  promoId        String?
+  promoTitle     String?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 

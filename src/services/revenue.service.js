@@ -45,8 +45,11 @@ async function getBusinessRevenue(ownerId) {
   for (const b of bookings) {
     const pid = b.professional.id;
     if (!proMap[pid]) proMap[pid] = { id: pid, name: b.professional.name, day: 0, week: 0, month: 0 };
-    const price = Number(b.service?.price ?? b.homeService?.price ?? 0)
-                + Number(b.homeService?.surcharge ?? 0);
+    // Precio realmente reservado (con promo) como fuente única; el sellado ya
+    // incluye recargo a domicilio. Fallback a service.price para citas viejas.
+    const price = b.price != null
+      ? Number(b.price)
+      : Number(b.service?.price ?? b.homeService?.price ?? 0) + Number(b.homeService?.surcharge ?? 0);
     proMap[pid].month += price;
     if (b.date >= weekStart && b.date < weekEnd)  proMap[pid].week += price;
     if (b.date >= dayStart  && b.date < dayEnd)   proMap[pid].day  += price;
@@ -86,8 +89,9 @@ async function getProfessionalRevenue(userId) {
 
   let day = 0, week = 0, month = 0;
   for (const b of bookings) {
-    const price = Number(b.service?.price ?? b.homeService?.price ?? 0)
-                + Number(b.homeService?.surcharge ?? 0);
+    const price = b.price != null
+      ? Number(b.price)
+      : Number(b.service?.price ?? b.homeService?.price ?? 0) + Number(b.homeService?.surcharge ?? 0);
     month += price;
     if (b.date >= weekStart && b.date < weekEnd)  week += price;
     if (b.date >= dayStart  && b.date < dayEnd)   day  += price;

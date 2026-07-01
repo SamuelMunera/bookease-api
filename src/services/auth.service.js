@@ -167,7 +167,7 @@ async function forgotPassword(email) {
     data: { token, userId: user.id, expiresAt },
   });
 
-  const frontendUrl = process.env.FRONTEND_URL || 'https://slotly.app';
+  const frontendUrl = process.env.FRONTEND_URL || process.env.CLIENT_URL || 'https://slotly.com.co';
   const resetUrl = `${frontendUrl}/reset-password?token=${token}`;
 
   try {

@@ -1,5 +1,6 @@
 const prisma = require('../config/database');
 const { toMinutes, toTime, parseLocalDate, overlaps } = require('./slot.service');
+const { computeServicePricing } = require('../utils/pricing');
 const emailService = require('./email.service');
 const { bookingToUTCMs } = require('../utils/timezone');
 const { retryOnConflict } = require('../utils/retry');
@@ -9,7 +10,7 @@ const BOOKING_INCLUDE = {
   client: { select: { id: true, name: true, email: true, phone: true } },
   professional: {
     select: {
-      id: true, name: true,
+      id: true, name: true, businessId: true,
       user:     { select: { email: true } },
       business: { select: { name: true, owner: { select: { email: true } } } },
     },
@@ -32,6 +33,46 @@ async function getEffectiveTiming(tx, professionalId, serviceId) {
   };
 }
 
+// Sella el precio realmente reservado (fuente única de verdad). Aplica la
+// promoción vigente del negocio sobre el servicio; para servicios a domicilio usa
+// precio + recargo. Best-effort: nunca rompe la reserva si algo falla.
+async function stampBookingPrice(booking) {
+  try {
+    if (booking.homeServiceId) {
+      const hs = await prisma.homeService.findUnique({
+        where: { id: booking.homeServiceId }, select: { price: true, surcharge: true },
+      });
+      const base = Number(hs?.price ?? 0) + Number(hs?.surcharge ?? 0);
+      return prisma.booking.update({
+        where: { id: booking.id },
+        data: { price: base, originalPrice: base },
+        include: BOOKING_INCLUDE,
+      });
+    }
+    if (!booking.serviceId || !booking.service) return booking;
+    const now = new Date();
+    const businessId = booking.professional?.businessId
+      ?? (await prisma.professional.findUnique({ where: { id: booking.professionalId }, select: { businessId: true } }))?.businessId;
+    const promotions = businessId
+      ? await prisma.promotion.findMany({ where: { businessId, isActive: true, startDate: { lte: now }, endDate: { gte: now } } })
+      : [];
+    const pricing = computeServicePricing(booking.service, promotions, now);
+    return prisma.booking.update({
+      where: { id: booking.id },
+      data: {
+        price: pricing.finalPrice,
+        originalPrice: pricing.originalPrice,
+        promoId: pricing.promoId,
+        promoTitle: pricing.promoTitle,
+      },
+      include: BOOKING_INCLUDE,
+    });
+  } catch (e) {
+    console.error('[booking] price stamp:', e.message);
+    return booking;
+  }
+}
+
 async function createBooking({ clientId, professionalId, serviceId, date, startTime }) {
   await assertBillingActive(professionalId);
 
@@ -43,7 +84,7 @@ async function createBooking({ clientId, professionalId, serviceId, date, startT
   const [_dy, _dm, _dd] = date.split('-').map(Number);
   const dayOfWeek = new Date(_dy, _dm - 1, _dd).getDay();
 
-  const booking = await retryOnConflict(() => prisma.$transaction(
+  let booking = await retryOnConflict(() => prisma.$transaction(
     async (tx) => {
       const service = await tx.service.findUnique({ where: { id: serviceId } });
       if (!service) throw new Error('Service not found');
@@ -118,6 +159,9 @@ async function createBooking({ clientId, professionalId, serviceId, date, startT
     { isolationLevel: 'Serializable' }
   ));
 
+
+  // Sella el precio promocional real antes de notificar/retornar.
+  booking = await stampBookingPrice(booking);
 
   // IMPORTANTE: se espera el envío DENTRO del ciclo de la petición. En serverless
   // (Vercel) la función se congela al responder, así que un envío fire-and-forget

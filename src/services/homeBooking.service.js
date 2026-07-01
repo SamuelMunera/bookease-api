@@ -34,7 +34,7 @@ async function createHomeBooking({ clientId, professionalId, homeServiceId, date
   const [_dy, _dm, _dd] = date.split('-').map(Number);
   const dayOfWeek = new Date(_dy, _dm - 1, _dd).getDay();
 
-  const booking = await retryOnConflict(() => prisma.$transaction(
+  let booking = await retryOnConflict(() => prisma.$transaction(
     async (tx) => {
       const homeService = await tx.homeService.findUnique({ where: { id: homeServiceId } });
       if (!homeService || !homeService.isActive) throw new Error('Home service not found or inactive');
@@ -107,6 +107,15 @@ async function createHomeBooking({ clientId, professionalId, homeServiceId, date
     },
     { isolationLevel: 'Serializable' }
   ));
+
+  // Sella el precio reservado (precio del servicio a domicilio + recargo).
+  const hs = booking.homeService;
+  const base = Number(hs?.price ?? 0) + Number(hs?.surcharge ?? 0);
+  booking = await prisma.booking.update({
+    where: { id: booking.id },
+    data: { price: base, originalPrice: base },
+    include: HOME_BOOKING_INCLUDE,
+  }).catch(e => { console.error('[booking] home price stamp:', e.message); return booking; });
 
   // Awaited a propósito: en serverless un envío fire-and-forget no se completa
   // tras responder. El .catch evita romper la reserva si Resend falla.

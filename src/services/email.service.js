@@ -1,6 +1,6 @@
 const { getResend, FROM } = require('../config/email');
 
-const APP_URL = process.env.CLIENT_URL || 'https://slotly.app';
+const APP_URL = process.env.CLIENT_URL || 'https://slotly.com.co';
 
 function escHtml(str) {
   return String(str ?? '')
