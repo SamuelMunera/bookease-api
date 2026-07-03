@@ -12,8 +12,8 @@ async function create(req, res) {
     if (!name || price === undefined || price === '') {
       return res.status(400).json({ error: 'name and price are required' });
     }
-    if (!Number.isFinite(duration) || duration <= 0) {
-      return res.status(400).json({ error: 'duration must be a positive number (minutes)' });
+    if (!Number.isFinite(duration) || duration < 5 || duration % 5 !== 0) {
+      return res.status(400).json({ error: 'duration must be a positive multiple of 5 (minutes)' });
     }
     if (Number(price) < 0) {
       return res.status(400).json({ error: 'price must be >= 0' });

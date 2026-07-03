@@ -54,6 +54,11 @@ async function update(id, ownerId, data) {
   if (!service) throw new Error('Service not found');
   if (service.business.ownerId !== ownerId) throw new Error('Forbidden');
   const clean = Object.fromEntries(Object.entries(data).filter(([k]) => ALLOWED_FIELDS.includes(k)));
+  if (clean.duration !== undefined) {
+    const d = Number(clean.duration);
+    if (!Number.isFinite(d) || d < 5 || d % 5 !== 0) throw new Error('duration must be a positive multiple of 5 (minutes)');
+    clean.duration = d;
+  }
   // Reemplaza el set de profesionales si se envía professionalIds (validados).
   let proUpdate = {};
   if (Array.isArray(data.professionalIds)) {

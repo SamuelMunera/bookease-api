@@ -435,6 +435,13 @@ async function saveServiceConfigs(userId, configs) {
   // configs = [{ serviceId, customDuration }]
   const prof = await prisma.professional.findUnique({ where: { userId } });
   if (!prof) throw new Error('Professional profile not found');
+  for (const { customDuration } of configs) {
+    if (customDuration === null || customDuration === undefined || customDuration === '') continue;
+    const d = Number(customDuration);
+    if (!Number.isFinite(d) || d < 5 || d % 5 !== 0) {
+      throw new Error('La duración debe ser un múltiplo de 5 minutos (mínimo 5)');
+    }
+  }
   await Promise.all(
     configs.map(({ serviceId, customDuration }) =>
       prisma.professionalServiceConfig.upsert({
