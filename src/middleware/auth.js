@@ -7,6 +7,26 @@ const prisma = require('../config/database');
 const TTL_MS = 30 * 1000;
 const pwdChangedCache = new Map(); // userId -> { value: number|null, exp: number }
 
+// LOW: the cache never evicted, so it leaked slowly in long-lived processes.
+// On write, if we exceed MAX_CACHE_ENTRIES, purge expired entries; if still at
+// capacity (all live), drop the oldest inserted key (Map preserves insertion
+// order). Purely a memory bound — revocation logic below is unchanged.
+const MAX_CACHE_ENTRIES = 5000;
+
+function setPasswordChangedCache(userId, entry) {
+  if (pwdChangedCache.size >= MAX_CACHE_ENTRIES) {
+    const now = Date.now();
+    for (const [key, cached] of pwdChangedCache) {
+      if (cached.exp <= now) pwdChangedCache.delete(key);
+    }
+    if (pwdChangedCache.size >= MAX_CACHE_ENTRIES) {
+      const oldest = pwdChangedCache.keys().next().value;
+      if (oldest !== undefined) pwdChangedCache.delete(oldest);
+    }
+  }
+  pwdChangedCache.set(userId, entry);
+}
+
 async function getPasswordChangedAt(userId) {
   const now = Date.now();
   const cached = pwdChangedCache.get(userId);
@@ -18,7 +38,7 @@ async function getPasswordChangedAt(userId) {
   });
   if (!user) return undefined; // usuario inexistente -> token inválido
   const value = user.passwordChangedAt ? user.passwordChangedAt.getTime() : null;
-  pwdChangedCache.set(userId, { value, exp: now + TTL_MS });
+  setPasswordChangedCache(userId, { value, exp: now + TTL_MS });
   return value;
 }
 
