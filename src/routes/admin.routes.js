@@ -9,6 +9,30 @@ const VALID_COURTESY_PLANS = ['solo', 'team', 'studio', 'enterprise'];
 // Una suscripción activada hace menos de este tiempo se marca "Recién pagó".
 const RECENT_PAYMENT_HOURS = 48;
 
+// Paginación OPT-IN de listados admin. Los paneles admin no tienen UI de
+// paginación hoy, así que por defecto NO se aplica límite (se preserva el
+// comportamiento actual de devolver todo). Solo cuando el cliente pasa
+// ?take= y/o ?skip= se aplican; take se capa a MAX_PAGE_SIZE.
+const MAX_PAGE_SIZE = 200;
+
+function parsePagination(query = {}) {
+  let take;
+  if (query.take !== undefined) {
+    const rawTake = Number(query.take);
+    if (Number.isFinite(rawTake) && rawTake > 0) {
+      take = Math.min(Math.floor(rawTake), MAX_PAGE_SIZE);
+    }
+  }
+  let skip;
+  if (query.skip !== undefined) {
+    const rawSkip = Number(query.skip);
+    if (Number.isFinite(rawSkip) && rawSkip >= 0) {
+      skip = Math.floor(rawSkip);
+    }
+  }
+  return { take, skip };
+}
+
 function generateCode(prefix) {
   const random = crypto.randomBytes(5).toString('hex').toUpperCase().slice(0, 8);
   return `${prefix}-${random}`;
@@ -39,14 +63,17 @@ router.get('/stats', async (_req, res) => {
   }
 });
 
-router.get('/businesses', async (_req, res) => {
+router.get('/businesses', async (req, res) => {
   try {
+    const { take, skip } = parsePagination(req.query);
     const businesses = await prisma.business.findMany({
       include: {
         _count: { select: { services: true, professionals: true } },
         professionals: { select: { _count: { select: { bookings: true } } } },
       },
       orderBy: { createdAt: 'desc' },
+      ...(take !== undefined ? { take } : {}),
+      ...(skip !== undefined ? { skip } : {}),
     });
     res.json(businesses.map(b => ({
       id: b.id,
@@ -95,8 +122,9 @@ router.delete('/categories/:id', async (req, res) => {
   } catch { res.status(400).json({ error: 'Error al eliminar categoría' }); }
 });
 
-router.get('/professionals', async (_req, res) => {
+router.get('/professionals', async (req, res) => {
   try {
+    const { take, skip } = parsePagination(req.query);
     const professionals = await prisma.professional.findMany({
       include: {
         business: { select: { id: true, name: true, category: true } },
@@ -104,6 +132,8 @@ router.get('/professionals', async (_req, res) => {
         _count: { select: { bookings: true, services: true } },
       },
       orderBy: { createdAt: 'desc' },
+      ...(take !== undefined ? { take } : {}),
+      ...(skip !== undefined ? { skip } : {}),
     });
     res.json(professionals);
   } catch {
@@ -116,10 +146,13 @@ router.get('/professionals', async (_req, res) => {
 // por API): es de solo lectura aquí. El plan real solo cambia a través del
 // flujo de billing/checkout (ver payment.routes.js /wompi/webhook).
 
-router.get('/promoters', async (_req, res) => {
+router.get('/promoters', async (req, res) => {
   try {
+    const { take, skip } = parsePagination(req.query);
     const promoters = await prisma.promoter.findMany({
       orderBy: { createdAt: 'desc' },
+      ...(take !== undefined ? { take } : {}),
+      ...(skip !== undefined ? { skip } : {}),
       include: {
         businesses: {
           select: { id: true, plan: true, status: true, subscription: { select: { status: true } } },
@@ -275,10 +308,13 @@ router.patch('/promoters/:id/status', async (req, res) => {
 
 // ── Referral codes: Cortesías ───────────────────────────────────────────────
 
-router.get('/courtesy-codes', async (_req, res) => {
+router.get('/courtesy-codes', async (req, res) => {
   try {
+    const { take, skip } = parsePagination(req.query);
     const codes = await prisma.courtesyCode.findMany({
       orderBy: { createdAt: 'desc' },
+      ...(take !== undefined ? { take } : {}),
+      ...(skip !== undefined ? { skip } : {}),
       include: {
         redeemedBusiness: { select: { name: true } },
         redeemedProfessional: { select: { name: true } },
