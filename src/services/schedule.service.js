@@ -2,11 +2,21 @@ const prisma = require('../config/database');
 
 // --- Schedules (weekly recurring) ---
 
-async function setSchedule(professionalId, { dayOfWeek, startTime, endTime, isActive }) {
+async function setSchedule(professionalId, { dayOfWeek, startTime, endTime, isActive, scheduleType, secondStartTime, secondEndTime }) {
+  // Persiste turno partido (part_time) e isActive de forma consistente con
+  // setMySchedule. Spread condicional: si el caller no envía scheduleType/segundo
+  // bloque, el update PRESERVA lo existente (no lo resetea a fulltime) y el create
+  // cae a los defaults del schema; si los envía, se guardan.
+  const data = {
+    startTime, endTime, isActive: isActive ?? true,
+    ...(scheduleType    !== undefined ? { scheduleType }    : {}),
+    ...(secondStartTime !== undefined ? { secondStartTime } : {}),
+    ...(secondEndTime   !== undefined ? { secondEndTime }   : {}),
+  };
   return prisma.schedule.upsert({
     where: { professionalId_dayOfWeek: { professionalId, dayOfWeek } },
-    update: { startTime, endTime, isActive: isActive ?? true },
-    create: { professionalId, dayOfWeek, startTime, endTime },
+    update: data,
+    create: { professionalId, dayOfWeek, ...data },
   });
 }
 
