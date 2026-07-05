@@ -104,7 +104,7 @@ app.patch('/api/bookings/home/:id/cancel', generalLimiter, authenticate, homeSer
 
 app.use('/api/subscriptions', generalLimiter, require('./routes/subscription.routes'));
 app.use('/api/payments', generalLimiter, require('./routes/payment.routes'));
-app.use('/api/cron', require('./routes/cron.routes'));
+app.use('/api/cron', generalLimiter, require('./routes/cron.routes'));
 app.use('/api/promotions', generalLimiter, require('./routes/promotion.routes'));
 app.get('/health', (_, res) => res.json({ status: 'ok' }));
 
@@ -156,8 +156,11 @@ app.get('/api/geo/country', generalLimiter, async (req, res) => {
 app.use((_req, res) => res.status(404).json({ error: 'Not found' }));
 
 // Global error handler — never leak stack traces
-app.use((err, _req, res, _next) => {
-  console.error(err.message || err);
+app.use((err, req, res, _next) => {
+  // Log the full stack plus request context for observability; the client
+  // response below stays generic so the stack is never leaked to callers.
+  console.error(`[error] ${req.method} ${req.originalUrl}`);
+  console.error(err.stack || err);
   if (err.code === 'LIMIT_FILE_SIZE' || err.type === 'entity.too.large') {
     return res.status(413).json({ error: 'Payload demasiado grande' });
   }

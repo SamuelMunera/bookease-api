@@ -45,6 +45,10 @@ async function createBusinessReview(userId, businessId, { rating, comment }) {
   if (!rating || rating < 1 || rating > 5) throw new Error('rating debe ser entre 1 y 5');
   const allowed = await canReviewBusiness(userId, businessId);
   if (!allowed) throw new Error('Solo puedes reseñar negocios donde tengas una reserva confirmada');
+  // Unicidad: un usuario solo puede dejar una reseña por negocio (evita spam y
+  // manipulación de rating). La regla @@unique del schema la maneja otro agente.
+  const existing = await prisma.review.findFirst({ where: { authorId: userId, businessId } });
+  if (existing) throw new Error('Ya enviaste una reseña para este negocio');
   return prisma.review.create({
     data: {
       rating: parseInt(rating, 10),
@@ -60,6 +64,10 @@ async function createProfessionalReview(userId, professionalId, { rating, commen
   if (!rating || rating < 1 || rating > 5) throw new Error('rating debe ser entre 1 y 5');
   const allowed = await canReviewProfessional(userId, professionalId);
   if (!allowed) throw new Error('Solo puedes reseñar profesionales con quienes tengas una reserva confirmada');
+  // Unicidad: un usuario solo puede dejar una reseña por profesional (evita spam
+  // y manipulación de rating). La regla @@unique del schema la maneja otro agente.
+  const existing = await prisma.review.findFirst({ where: { authorId: userId, professionalId } });
+  if (existing) throw new Error('Ya enviaste una reseña para este profesional');
   return prisma.review.create({
     data: {
       rating: parseInt(rating, 10),

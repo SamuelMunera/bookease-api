@@ -58,12 +58,20 @@ router.post('/wompi/checkout', authenticate, async (req, res) => {
       if (bizRef && bizRef.freeMonthsEarned > bizRef.freeMonthsUsed) {
         const sub = await subscriptionService.getByBusiness(businessId);
         if (sub) {
-          await subscriptionService.applyFreeMonth(sub.id, plan);
-          await prisma.business.update({
-            where: { id: businessId },
-            data: { freeMonthsUsed: { increment: 1 }, plan },
+          // M-02: consumo atómico del mes gratis. El updateMany condicional
+          // (freeMonthsUsed < freeMonthsEarned) sólo afecta 1 fila si aún queda
+          // un mes disponible; si dos checkouts concurrentes compiten, sólo uno
+          // obtiene count === 1 y aplica el mes gratis. Todo en una $transaction.
+          const applied = await prisma.$transaction(async (tx) => {
+            const claim = await tx.business.updateMany({
+              where: { id: businessId, freeMonthsUsed: { lt: bizRef.freeMonthsEarned } },
+              data: { freeMonthsUsed: { increment: 1 }, plan },
+            });
+            if (claim.count !== 1) return false; // sin meses gratis disponibles / ya consumido
+            await subscriptionService.applyFreeMonth(sub.id, plan, tx);
+            return true;
           });
-          return res.json({ freeMonthApplied: true, plan });
+          if (applied) return res.json({ freeMonthApplied: true, plan });
         }
       }
     }
@@ -180,56 +188,87 @@ router.post('/wompi/webhook', async (req, res) => {
     const VALID_STATUSES = ['PENDING', 'APPROVED', 'DECLINED', 'VOIDED', 'ERROR'];
     const newStatus = VALID_STATUSES.includes(txn.status) ? txn.status : 'ERROR';
 
-    await prisma.payment.update({
-      where: { id: payment.id },
-      data: { status: newStatus, wompiTransactionId: String(txn.id) },
-    });
+    // C-01 + atomicidad total: la transición del Payment a APPROVED y TODOS
+    // sus efectos (activación de la suscripción, actualización del negocio/
+    // profesional, conversión del promotor, recompensa de referido y consumo
+    // de crédito) se ejecutan en UNA sola $transaction. Si cualquier paso
+    // falla, todo revierte — incluida la marca APPROVED — y el reintento de
+    // Wompi reprocesa el evento desde cero. No hay I/O externo aquí (el
+    // webhook solo procesa el evento entrante), así que envolver en una tx de
+    // DB es seguro.
+    const outcome = await prisma.$transaction(async (tx) => {
+      // Transición atómica del Payment: solo cambia el estado si NO estaba ya
+      // APPROVED. Un pago APPROVED es terminal — no se re-procesa ante un
+      // evento duplicado.
+      const transition = await tx.payment.updateMany({
+        where: { id: payment.id, status: { not: 'APPROVED' } },
+        data: { status: newStatus, wompiTransactionId: String(txn.id) },
+      });
 
-    // Solo un estado APPROVED real de Wompi activa la suscripción. PENDING,
-    // DECLINED, VOIDED o ERROR dejan el negocio/profesional sin cambios
-    // (sigue en su estado de billing actual: trial, payment_required, etc.)
-    if (newStatus === 'APPROVED') {
-      // payment_source_id solo viene si el cliente aceptó guardar el método de
-      // pago en el widget de Wompi — es lo que habilita la auto-renovación
-      // mensual real (sin esto, la suscripción no se cobra automáticamente).
-      const paymentSourceId = txn.payment_source_id != null ? String(txn.payment_source_id) : undefined;
-
-      if (payment.businessId) {
-        const sub = await subscriptionService.getByBusiness(payment.businessId);
-        if (sub) await subscriptionService.activate(sub.id, payment.plan, { paymentSourceId });
-        await prisma.business.update({ where: { id: payment.businessId }, data: { plan: payment.plan, paymentGateway: 'wompi' } });
-      } else if (payment.professionalId) {
-        const sub = await subscriptionService.getByProfessional(payment.professionalId);
-        if (sub) await subscriptionService.activate(sub.id, payment.plan, { paymentSourceId });
-        await prisma.professional.update({ where: { id: payment.professionalId }, data: { plan: payment.plan } });
+      // Si el nuevo estado es APPROVED y no hubo transición (count === 0), el
+      // pago ya estaba APPROVED en una tx previa comprometida con éxito:
+      // evento duplicado, se ignora sin efectos (idempotencia correcta).
+      if (newStatus === 'APPROVED' && transition.count === 0) {
+        return { duplicate: true };
       }
 
-      if (payment.promoterDiscountApplied) {
-        await prisma.promoterConversion.updateMany({
-          where: {
-            status: 'PENDING_PAYMENT',
-            ...(payment.businessId ? { businessId: payment.businessId } : { professionalId: payment.professionalId }),
-          },
-          data: { status: 'DISCOUNT_APPLIED' },
-        });
-      }
+      // Solo un estado APPROVED real de Wompi activa la suscripción. PENDING,
+      // DECLINED, VOIDED o ERROR dejan el negocio/profesional sin cambios
+      // (sigue en su estado de billing actual: trial, payment_required, etc.)
+      // La activación + créditos + recompensa se ejecutan una única vez, en la
+      // primera transición a APPROVED.
+      if (newStatus === 'APPROVED') {
+        // payment_source_id solo viene si el cliente aceptó guardar el método
+        // de pago en el widget de Wompi — es lo que habilita la auto-renovación
+        // mensual real (sin esto, la suscripción no se cobra automáticamente).
+        const paymentSourceId = txn.payment_source_id != null ? String(txn.payment_source_id) : undefined;
 
-      if (payment.businessId) {
-        // El pago real del negocio referido marca la referencia como EXITOSA y
-        // dispara la recompensa del referidor (mes gratis o crédito 20%).
-        // Idempotente ante webhooks duplicados de Wompi.
-        await referralService.markReferralSuccessful(payment.businessId).catch(err =>
-          console.error('[wompi webhook] referral reward error:', err.message));
+        if (payment.businessId) {
+          const sub = await subscriptionService.getByBusiness(payment.businessId);
+          if (sub) await subscriptionService.activate(sub.id, payment.plan, { paymentSourceId }, tx);
+          await tx.business.update({ where: { id: payment.businessId }, data: { plan: payment.plan, paymentGateway: 'wompi' } });
+        } else if (payment.professionalId) {
+          const sub = await subscriptionService.getByProfessional(payment.professionalId);
+          if (sub) await subscriptionService.activate(sub.id, payment.plan, { paymentSourceId }, tx);
+          await tx.professional.update({ where: { id: payment.professionalId }, data: { plan: payment.plan } });
+        }
 
-        // Si este pago consumió un crédito 20% del referidor, recién ahora
-        // (pago aprobado) se descuenta del saldo — nunca en pagos fallidos.
-        if (payment.referrerCreditApplied) {
-          await prisma.business.update({
-            where: { id: payment.businessId },
-            data: { discountCreditsUsed: { increment: 1 } },
+        if (payment.promoterDiscountApplied) {
+          await tx.promoterConversion.updateMany({
+            where: {
+              status: 'PENDING_PAYMENT',
+              ...(payment.businessId ? { businessId: payment.businessId } : { professionalId: payment.professionalId }),
+            },
+            data: { status: 'DISCOUNT_APPLIED' },
           });
         }
+
+        if (payment.businessId) {
+          // El pago real del negocio referido marca la referencia como EXITOSA
+          // y dispara la recompensa del referidor (mes gratis o crédito 20%).
+          // Doblemente idempotente: solo llega aquí en la primera transición a
+          // APPROVED (C-01) y markReferralSuccessful tiene su propio guard.
+          // Ahora forma parte de la MISMA tx externa: si falla, revierte todo
+          // (incluida la marca APPROVED) y Wompi reintenta desde cero.
+          await referralService.markReferralSuccessful(payment.businessId, tx);
+
+          // Si este pago consumió un crédito 20% del referidor, recién ahora
+          // (pago aprobado) se descuenta del saldo — nunca en pagos fallidos.
+          if (payment.referrerCreditApplied) {
+            await tx.business.update({
+              where: { id: payment.businessId },
+              data: { discountCreditsUsed: { increment: 1 } },
+            });
+          }
+        }
       }
+
+      return { duplicate: false };
+    });
+
+    if (outcome.duplicate) {
+      console.log(`[wompi webhook] reference=${txn.reference} ya APPROVED, evento duplicado ignorado`);
+      return res.status(200).json({ received: true });
     }
 
     console.log(`[wompi webhook] reference=${txn.reference} status=${newStatus}`);

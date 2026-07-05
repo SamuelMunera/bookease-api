@@ -69,10 +69,11 @@ async function setMySchedule(req, res) {
 
 async function create(req, res) {
   try {
-    const professional = await professionalService.create(req.params.businessId, req.body);
+    const professional = await professionalService.create(req.params.businessId, req.user.id, req.body);
     res.status(201).json(professional);
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    const status = err.message === 'Forbidden' ? 403 : 400;
+    res.status(status).json({ error: err.message });
   }
 }
 

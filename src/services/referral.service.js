@@ -101,22 +101,29 @@ async function markReferralSuccessful(referredBusinessId, client = prisma) {
   const rewardType  = inFreeStage ? 'FREE_MONTH' : 'DISCOUNT_20';
   const rewardValue = inFreeStage ? 100 : REFERRER_DISCOUNT;
 
-  await client.business.update({
-    where: { id: referrer.id },
-    data: inFreeStage
-      ? { freeMonthsEarned: { increment: 1 } }
-      : { discountCreditsEarned: { increment: 1 } },
-  });
+  // C-02: el guard de idempotencia va PRIMERO. Dos webhooks concurrentes
+  // compiten por esta transición atómica PENDING→SUCCESSFUL; solo uno gana
+  // (count === 1) y solo ese incrementa la recompensa. Ambas operaciones se
+  // ejecutan en una transacción para que la marca y el incremento sean atómicos.
+  const run = async (tx) => {
+    const updated = await tx.businessReferral.updateMany({
+      where: { id: referral.id, status: 'PENDING' },
+      data: { status: 'SUCCESSFUL', referredDiscountApplied: true, rewardType, rewardValue, rewardAppliedAt: new Date() },
+    });
+    if (updated.count !== 1) return null; // ya lo procesó otro evento — sin recompensa
 
-  // Guard de idempotencia: solo marca si seguía PENDING (evita doble recompensa
-  // ante webhooks duplicados de Wompi).
-  const updated = await client.businessReferral.updateMany({
-    where: { id: referral.id, status: 'PENDING' },
-    data: { status: 'SUCCESSFUL', referredDiscountApplied: true, rewardType, rewardValue, rewardAppliedAt: new Date() },
-  });
-  if (updated.count === 0) return null; // ya lo procesó otro evento
+    await tx.business.update({
+      where: { id: referrer.id },
+      data: inFreeStage
+        ? { freeMonthsEarned: { increment: 1 } }
+        : { discountCreditsEarned: { increment: 1 } },
+    });
 
-  return { rewardType, rewardValue };
+    return { rewardType, rewardValue };
+  };
+
+  // Si ya recibimos un tx (client !== prisma), reutilizarlo; si no, abrir uno.
+  return client === prisma ? prisma.$transaction(run) : run(client);
 }
 
 // Datos para el apartado "Referidos" del dashboard del negocio.

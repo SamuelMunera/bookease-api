@@ -4,6 +4,7 @@ const { checkCoverage } = require('./homeService.service');
 const emailService = require('./email.service');
 const { retryOnConflict } = require('../utils/retry');
 const { assertBillingActive } = require('./subscription.service');
+const { getCancelPolicy, assertCancellationWindow, nowInTimezone } = require('./booking.service');
 
 const HOME_BOOKING_INCLUDE = {
   client: { select: { id: true, name: true, email: true, phone: true } },
@@ -21,9 +22,17 @@ async function createHomeBooking({ clientId, professionalId, homeServiceId, date
   await assertBillingActive(professionalId);
 
   const localDate = parseLocalDate(date);
-  const now = new Date();
-  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  if (localDate < today) throw new Error('Cannot book a past date');
+  // A-02: "fecha/hora pasada" en la timezone del negocio/profesional, no en el
+  // reloj UTC del servidor (a las 20:00 en Bogotá aún es HOY, no "mañana UTC").
+  const proTz = await prisma.professional.findUnique({
+    where: { id: professionalId },
+    select: { timezone: true, business: { select: { timezone: true } } },
+  });
+  const timezone = proTz?.business?.timezone ?? proTz?.timezone ?? 'America/Bogota';
+  const { dateStr: todayStr, minutes: nowMinutes } = nowInTimezone(timezone);
+  if (date < todayStr) throw new Error('Cannot book a past date');
+  if (date === todayStr && toMinutes(startTime) < nowMinutes)
+    throw new Error('Cannot book a past time');
 
   if (!clientAddress) throw new Error('Client address is required for home service bookings');
 
@@ -129,6 +138,11 @@ async function cancelHomeBooking(id, clientId) {
   if (booking.clientId !== clientId) throw new Error('Forbidden');
   if (booking.type !== 'HOME_SERVICE') throw new Error('Not a home service booking');
   if (booking.status === 'CANCELLED') throw new Error('Already cancelled');
+  // M-09: aplicar la política de cancelación (cancelMinHours) igual que
+  // booking.service.cancelBooking. Antes las reservas a domicilio se podían
+  // cancelar fuera de la ventana permitida.
+  const { minHours, timezone } = await getCancelPolicy(booking.professionalId);
+  assertCancellationWindow(booking, minHours, timezone);
 
   const cancelled = await prisma.booking.update({
     where: { id },

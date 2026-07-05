@@ -93,6 +93,67 @@ async function getPromoterCommissions({ year, month, country } = {}) {
     },
   });
 
+  // ---------------------------------------------------------------------------
+  // Antes: por cada promotor se hacían 2 aggregate + 1 groupBy (N+1). Ahora se
+  // ejecutan DOS groupBy globales (mes + histórico) sobre TODAS las entidades
+  // referidas y se reparten en memoria por promotor. Cada entidad pertenece a un
+  // único promotor (Business.promoterId / Professional.promoterId), y cada Payment
+  // pertenece a un business O a un professional (nunca ambos), por lo que el
+  // reparto es exacto: los números son idénticos al cálculo por-promotor previo.
+  // ---------------------------------------------------------------------------
+  const allBusinessIds = [];
+  const allProfessionalIds = [];
+  for (const promoter of promoters) {
+    for (const b of promoter.businesses) allBusinessIds.push(b.id);
+    for (const p of promoter.professionals) allProfessionalIds.push(p.id);
+  }
+
+  const globalEntityFilter = {
+    OR: [
+      ...(allBusinessIds.length ? [{ businessId: { in: allBusinessIds } }] : []),
+      ...(allProfessionalIds.length ? [{ professionalId: { in: allProfessionalIds } }] : []),
+    ],
+  };
+
+  // Sumas por entidad (mes e histórico). Solo se consultan si hay entidades.
+  const monthlyByBusiness = new Map();
+  const monthlyByProfessional = new Map();
+  const allTimeByBusiness = new Map();
+  const allTimeByProfessional = new Map();
+
+  if (allBusinessIds.length || allProfessionalIds.length) {
+    const [monthlyGroups, allTimeGroups] = await Promise.all([
+      prisma.payment.groupBy({
+        by: ['businessId', 'professionalId'],
+        _sum: { amountInCents: true },
+        where: { status: 'APPROVED', currency, createdAt: { gte: start, lt: end }, ...globalEntityFilter },
+      }),
+      prisma.payment.groupBy({
+        by: ['businessId', 'professionalId'],
+        _sum: { amountInCents: true },
+        where: { status: 'APPROVED', currency, ...globalEntityFilter },
+      }),
+    ]);
+
+    // Cada fila del groupBy tiene businessId XOR professionalId no-null.
+    const fold = (rows, byBusiness, byProfessional) => {
+      for (const row of rows) {
+        const sum = row._sum.amountInCents ?? 0;
+        if (row.businessId != null) {
+          const cur = byBusiness.get(row.businessId) || { sum: 0 };
+          cur.sum += sum;
+          byBusiness.set(row.businessId, cur);
+        } else if (row.professionalId != null) {
+          const cur = byProfessional.get(row.professionalId) || { sum: 0 };
+          cur.sum += sum;
+          byProfessional.set(row.professionalId, cur);
+        }
+      }
+    };
+    fold(monthlyGroups, monthlyByBusiness, monthlyByProfessional);
+    fold(allTimeGroups, allTimeByBusiness, allTimeByProfessional);
+  }
+
   const result = [];
   let totalsMonthlyRevenue = 0;
   let totalsMonthlyCommission = 0;
@@ -101,54 +162,27 @@ async function getPromoterCommissions({ year, month, country } = {}) {
     const businessIds = promoter.businesses.map((b) => b.id);
     const professionalIds = promoter.professionals.map((p) => p.id);
 
-    // Sin entidades referidas → todos los números en 0.
-    if (businessIds.length === 0 && professionalIds.length === 0) {
-      result.push({
-        id: promoter.id,
-        name: `${promoter.firstName} ${promoter.lastName}`.trim(),
-        code: promoter.code,
-        status: promoter.status,
-        referredPaid: 0,
-        monthlyRevenueCents: 0,
-        monthlyCommissionCents: 0,
-        allTimeRevenueCents: 0,
-        allTimeCommissionCents: 0,
-      });
-      continue;
+    let monthlyRevenueCents = 0;
+    let allTimeRevenueCents = 0;
+    // referredPaid: nº de entidades distintas con al menos un pago APPROVED
+    // (histórico) = nº de entidades presentes en el groupBy histórico.
+    let referredPaid = 0;
+
+    for (const id of businessIds) {
+      const m = monthlyByBusiness.get(id);
+      if (m) monthlyRevenueCents += m.sum;
+      const a = allTimeByBusiness.get(id);
+      if (a) { allTimeRevenueCents += a.sum; referredPaid += 1; }
+    }
+    for (const id of professionalIds) {
+      const m = monthlyByProfessional.get(id);
+      if (m) monthlyRevenueCents += m.sum;
+      const a = allTimeByProfessional.get(id);
+      if (a) { allTimeRevenueCents += a.sum; referredPaid += 1; }
     }
 
-    // Filtro OR sobre las entidades del promotor. Un Payment pertenece a un
-    // business O a un professional (nunca ambos), así que el OR no duplica.
-    const entityFilter = {
-      OR: [
-        ...(businessIds.length ? [{ businessId: { in: businessIds } }] : []),
-        ...(professionalIds.length ? [{ professionalId: { in: professionalIds } }] : []),
-      ],
-    };
-
-    // Pagos aprobados del mes (en la moneda del país seleccionado).
-    const monthlyAgg = await prisma.payment.aggregate({
-      _sum: { amountInCents: true },
-      where: { status: 'APPROVED', currency, createdAt: { gte: start, lt: end }, ...entityFilter },
-    });
-
-    // Pagos aprobados histórico (misma moneda).
-    const allTimeAgg = await prisma.payment.aggregate({
-      _sum: { amountInCents: true },
-      where: { status: 'APPROVED', currency, ...entityFilter },
-    });
-
-    const monthlyRevenueCents = monthlyAgg._sum.amountInCents ?? 0;
-    const allTimeRevenueCents = allTimeAgg._sum.amountInCents ?? 0;
     const monthlyCommissionCents = Math.round((monthlyRevenueCents * COMMISSION_PCT) / 100);
     const allTimeCommissionCents = Math.round((allTimeRevenueCents * COMMISSION_PCT) / 100);
-
-    // referredPaid: nº de entidades distintas con al menos un pago APPROVED.
-    const paidGroups = await prisma.payment.groupBy({
-      by: ['businessId', 'professionalId'],
-      where: { status: 'APPROVED', currency, ...entityFilter },
-    });
-    const referredPaid = paidGroups.length;
 
     totalsMonthlyRevenue += monthlyRevenueCents;
     totalsMonthlyCommission += monthlyCommissionCents;

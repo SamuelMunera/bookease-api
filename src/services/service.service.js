@@ -3,8 +3,26 @@ const { computeServicePricing, getActivePromotions } = require('../utils/pricing
 
 const ALLOWED_FIELDS = ['name', 'description', 'duration', 'price', 'categoryId'];
 
-async function create(businessId, data) {
+async function create(businessId, callerId, data) {
+  // IDOR guard: solo el dueño del negocio puede crear servicios en él.
+  const biz = await prisma.business.findUnique({
+    where: { id: businessId },
+    select: { ownerId: true },
+  });
+  if (!biz) throw new Error('Business not found');
+  if (biz.ownerId !== callerId) throw new Error('Forbidden');
   const clean = Object.fromEntries(Object.entries(data).filter(([k]) => ALLOWED_FIELDS.includes(k)));
+  // Validación server-side (mismas reglas que update): no confiar solo en el
+  // controller — la API directa puede saltarse el frontend.
+  if (!clean.name || String(clean.name).trim() === '') throw new Error('name is required');
+  const price = Number(clean.price);
+  if (!Number.isFinite(price) || price < 0) throw new Error('price must be >= 0');
+  clean.price = price;
+  if (clean.duration !== undefined) {
+    const d = Number(clean.duration);
+    if (!Number.isFinite(d) || d < 5 || d % 5 !== 0) throw new Error('duration must be a positive multiple of 5 (minutes)');
+    clean.duration = d;
+  }
   // Solo se vinculan profesionales que realmente pertenecen a este negocio.
   let connectIds = [];
   if (Array.isArray(data.professionalIds) && data.professionalIds.length) {

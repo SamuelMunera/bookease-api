@@ -45,6 +45,7 @@ model User {
   googleId  String?  @unique
   role      Role     @default(CLIENT)
   country   String   @default("CO")
+  passwordChangedAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -178,6 +179,8 @@ model Promotion {
   updatedAt     DateTime @updatedAt
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
 }
 
 model Professional {
@@ -413,6 +416,10 @@ model Booking {
   service      Service?       @relation(fields: [serviceId], references: [id])
   homeService  HomeService?   @relation(fields: [homeServiceId], references: [id])
   client       User           @relation(fields: [clientId], references: [id])
+
+  @@index([professionalId, date])
+  @@index([clientId])
+  @@index([date, status])
 }
 
 model HomeService {
@@ -470,6 +477,7 @@ model Review {
 
   @@unique([authorId, businessId])
   @@unique([authorId, professionalId])
+  @@index([businessId])
 }
 
 model FeedbackReport {
@@ -521,6 +529,8 @@ model ScheduleException {
   createdAt      DateTime  @default(now())
 
   professional Professional @relation(fields: [professionalId], references: [id])
+
+  @@index([professionalId, date])
 }
 
 enum PromoterStatus {
@@ -633,4 +643,7 @@ model Payment {
 
   business     Business?     @relation(fields: [businessId], references: [id])
   professional Professional? @relation(fields: [professionalId], references: [id])
+
+  @@index([businessId])
+  @@index([professionalId])
 }

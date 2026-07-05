@@ -147,9 +147,15 @@ async function getHomeSlots(professionalId, homeServiceId, dateStr) {
 
   const proRow = await prisma.professional.findUnique({
     where: { id: professionalId },
-    select: { bufferTime: true, offersHomeService: true },
+    select: { bufferTime: true, offersHomeService: true, timezone: true, business: { select: { timezone: true } } },
   });
   if (!proRow?.offersHomeService) return [];
+
+  // Si la fecha consultada es HOY en la timezone del negocio/profesional, se
+  // descartan los slots cuya hora de inicio ya pasó (mismo criterio que getAvailableSlots).
+  const timezone = proRow?.business?.timezone ?? proRow?.timezone ?? 'America/Bogota';
+  const { dateStr: todayStr, minutes: nowMinutes } = nowInTimezone(timezone);
+  const minStartMinutes = dateStr === todayStr ? nowMinutes : -Infinity;
 
   const schedule = await prisma.homeSchedule.findUnique({
     where: { professionalId_dayOfWeek: { professionalId, dayOfWeek } },
@@ -182,6 +188,7 @@ async function getHomeSlots(professionalId, homeServiceId, dateStr) {
   const step = effectiveDuration + bufferTime;
   const slots = [];
   for (let start = dayStart; start + effectiveDuration <= dayEnd; start += step) {
+    if (start < minStartMinutes) continue; // slot ya pasó (solo aplica si es hoy)
     const end = start + effectiveDuration;
     if (!blocked.some((b) => overlaps(start, end, b.start, b.end))) {
       slots.push({ startTime: toTime(start), endTime: toTime(end) });

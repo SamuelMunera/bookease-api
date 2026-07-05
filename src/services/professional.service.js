@@ -36,6 +36,15 @@ async function registerProfessional({ name, email, password, phone, specialty, b
   // Referral/courtesy code (only meaningful for independent professionals)
   const referral = await referralService.resolveReferralCode(referralCode);
 
+  // Los códigos SLOT- (BUSINESS_REFERRAL) solo aplican al registro de negocios.
+  // Antes se aceptaban en silencio sin crear ningún BusinessReferral; ahora se
+  // rechazan explícitamente para no dar una falsa sensación de canje.
+  if (referral?.type === 'BUSINESS_REFERRAL') {
+    const err = new Error('Los códigos SLOT- son solo para registro de negocios. Usa un código PROMO- o CORTESIA- si tienes uno.');
+    err.status = 400;
+    throw err;
+  }
+
   if (businessId) {
     const biz = await prisma.business.findUnique({
       where: { id: businessId },
@@ -63,28 +72,60 @@ async function registerProfessional({ name, email, password, phone, specialty, b
     ...(referral?.type === 'PROMOTER' ? { promoterId: referral.promoterId } : {}),
   };
 
-  let user;
-  if (existing) {
-    // Vincular un nuevo perfil profesional a la identidad ya existente, sin
-    // tocar su contraseña ni su `role` primario (sigue siendo, p.ej., dueño).
-    const professional = await prisma.professional.create({
-      data: { ...proData, userId: existing.id },
-      select: { id: true, businessId: true, specialty: true },
-    });
-    user = { id: existing.id, name: existing.name, email: existing.email, role: 'PROFESSIONAL', professional };
-  } else {
-    const hashed = await bcrypt.hash(password, 12);
-    user = await prisma.user.create({
-      data: {
-        name, email: normalizedEmail, password: hashed, role: 'PROFESSIONAL',
-        professional: { create: proData },
-      },
-      select: {
-        id: true, name: true, email: true, role: true,
-        professional: { select: { id: true, businessId: true, specialty: true } },
-      },
-    });
-  }
+  // La contraseña se hashea fuera de la transacción (operación CPU, no toca DB)
+  // para mantener la transacción lo más corta posible.
+  const hashed = existing ? null : await bcrypt.hash(password, 12);
+
+  // Toda la creación (User+Professional, suscripción TRIALING, canje de
+  // cortesía y conversión de promotor) ocurre atómicamente: si algo falla, el
+  // profesional NO queda sin Subscription (assertBillingActive lo bloquearía
+  // de forma permanente). Mismo patrón que business.service.create().
+  const user = await prisma.$transaction(async (tx) => {
+    let u;
+    if (existing) {
+      // Vincular un nuevo perfil profesional a la identidad ya existente, sin
+      // tocar su contraseña ni su `role` primario (sigue siendo, p.ej., dueño).
+      const professional = await tx.professional.create({
+        data: { ...proData, userId: existing.id },
+        select: { id: true, businessId: true, specialty: true },
+      });
+      u = { id: existing.id, name: existing.name, email: existing.email, role: 'PROFESSIONAL', professional };
+    } else {
+      u = await tx.user.create({
+        data: {
+          name, email: normalizedEmail, password: hashed, role: 'PROFESSIONAL',
+          professional: { create: proData },
+        },
+        select: {
+          id: true, name: true, email: true, role: true,
+          professional: { select: { id: true, businessId: true, specialty: true } },
+        },
+      });
+    }
+
+    // Solo professionals (no businessId) get their own subscription.
+    // Awaited: a professional must never exist without a TRIALING subscription,
+    // otherwise getBillingState() would treat them as payment_required immediately.
+    if (!businessId && u.professional) {
+      const proCountry = country || 'CO';
+      await subscriptionService.createForProfessional(u.professional.id, 'solo', proCountry, tx);
+    }
+
+    if (referral?.type === 'COURTESY' && u.professional) {
+      // El plan regalado fue fijado por el admin al generar el código — se
+      // aplica tal cual a la suscripción ya creada (TRIALING/'solo') de arriba.
+      const courtesyPlan = await referralService.redeemCourtesyCode(referral.courtesyCodeId, { professionalId: u.professional.id }, tx);
+      await subscriptionService.applyCourtesySubscription(u.professional.id, courtesyPlan, tx);
+    }
+
+    if (referral?.type === 'PROMOTER' && u.professional) {
+      await referralService.recordPromoterConversion({
+        promoterId: referral.promoterId, promoterCode: referral.promoterCode, professionalId: u.professional.id,
+      }, tx);
+    }
+
+    return u;
+  });
 
   // El contexto activo recién creado es PROFESSIONAL. Si la identidad además es
   // dueña de un negocio, su token podrá alternar de contexto luego.
@@ -93,27 +134,6 @@ async function registerProfessional({ name, email, password, phone, specialty, b
   const token = jwt.sign({ id: user.id, role: 'PROFESSIONAL' }, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRES_IN || '7d',
   });
-
-  // Solo professionals (no businessId) get their own subscription.
-  // Awaited: a professional must never exist without a TRIALING subscription,
-  // otherwise getBillingState() would treat them as payment_required immediately.
-  if (!businessId && user.professional) {
-    const proCountry = country || 'CO';
-    await subscriptionService.createForProfessional(user.professional.id, 'solo', proCountry);
-  }
-
-  if (referral?.type === 'COURTESY' && user.professional) {
-    // El plan regalado fue fijado por el admin al generar el código — se
-    // aplica tal cual a la suscripción ya creada (TRIALING/'solo') de arriba.
-    const courtesyPlan = await referralService.redeemCourtesyCode(referral.courtesyCodeId, { professionalId: user.professional.id });
-    await subscriptionService.applyCourtesySubscription(user.professional.id, courtesyPlan);
-  }
-
-  if (referral?.type === 'PROMOTER' && user.professional) {
-    await referralService.recordPromoterConversion({
-      promoterId: referral.promoterId, promoterCode: referral.promoterCode, professionalId: user.professional.id,
-    });
-  }
 
   return { user, token };
 }
@@ -322,12 +342,14 @@ async function deleteWeekSchedule(userId, weekStart) {
   await prisma.scheduleOverride.deleteMany({ where: { professionalId: prof.id, weekStart: ws } });
 }
 
-async function create(businessId, data) {
+async function create(businessId, callerId, data) {
   const biz = await prisma.business.findUnique({
     where: { id: businessId },
     include: { professionals: { select: { id: true } } },
   });
   if (!biz) throw new Error('Business not found');
+  // IDOR guard: solo el dueño del negocio puede crear profesionales en él.
+  if (biz.ownerId !== callerId) throw new Error('Forbidden');
   const limit = getPlanLimit(biz.plan ?? 'team');
   if (biz.professionals.length >= limit) {
     const err = new Error(`El plan del negocio permite máximo ${limit} profesional${limit !== 1 ? 'es' : ''}. Actualiza el plan para agregar más.`);

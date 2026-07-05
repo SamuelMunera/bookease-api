@@ -62,7 +62,13 @@ function verifyWebhookSignature(body) {
 
   const concatenated = signature.properties.map(p => getValueByPath(data, p)).join('') + timestamp + wompi.EVENTS_KEY;
   const expected = crypto.createHash('sha256').update(concatenated).digest('hex');
-  return expected === signature.checksum;
+  // B-01: comparación en tiempo constante para no filtrar información por el
+  // tiempo de comparación. timingSafeEqual exige buffers de igual longitud, así
+  // que primero validamos longitud (guard) y luego comparamos byte a byte.
+  const expectedBuf = Buffer.from(expected, 'utf8');
+  const receivedBuf = Buffer.from(String(signature.checksum), 'utf8');
+  if (expectedBuf.length !== receivedBuf.length) return false;
+  return crypto.timingSafeEqual(expectedBuf, receivedBuf);
 }
 
 module.exports = {

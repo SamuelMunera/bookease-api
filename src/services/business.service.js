@@ -250,11 +250,26 @@ async function findCityIds(city, status = 'ACTIVE') {
   return rows.map(r => r.id);
 }
 
-async function findAll({ category, city, lat, lng, radius, time, userCountry } = {}) {
+// Default cap on how many ACTIVE businesses we pull into memory. Geo distance
+// filtering/sorting still happens in memory (SQL geo is out of scope), so this
+// bounds worst-case memory/CPU instead of loading the entire table.
+// Callers that genuinely need the full set for a map can pass a higher `limit`.
+const DEFAULT_FIND_LIMIT = 50;
+const MAX_FIND_LIMIT = 500;
+
+async function findAll({ category, city, lat, lng, radius, time, userCountry, limit, offset } = {}) {
   const userLat = lat ? parseFloat(lat) : null;
   const userLng = lng ? parseFloat(lng) : null;
   const maxRadius = radius ? parseFloat(radius) : null;
   const validTime = isValidTime(time) ? time : null;
+
+  // Pagination guards: default 50, hard-capped at MAX_FIND_LIMIT, always >= 1.
+  const parsedLimit = Number.parseInt(limit, 10);
+  const take = Number.isFinite(parsedLimit)
+    ? Math.min(Math.max(parsedLimit, 1), MAX_FIND_LIMIT)
+    : DEFAULT_FIND_LIMIT;
+  const parsedOffset = Number.parseInt(offset, 10);
+  const skip = Number.isFinite(parsedOffset) && parsedOffset > 0 ? parsedOffset : 0;
 
   // Accent-insensitive city matching via unaccent — runs only when no geo search
   let cityIds = null;
@@ -291,6 +306,12 @@ async function findAll({ category, city, lat, lng, radius, time, userCountry } =
       }),
     },
     select: { ...PUBLIC_BUSINESS_SELECT, lat: true, lng: true },
+    // NOTA: acotamos el resultado en BD. El orden por cercanía y el filtro por
+    // radio se aplican en memoria SOBRE ESTA PÁGINA (el geo no está en SQL), así
+    // que para búsquedas geográficas conviene pasar un `limit` mayor si se
+    // necesita cubrir todo el mapa. Sin geo, el take/skip pagina normalmente.
+    take,
+    skip,
   });
 
   if (!userLat || !userLng) {

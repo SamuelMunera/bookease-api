@@ -112,8 +112,8 @@ async function assertBillingActive(professionalId) {
 // checkout, resets the billing period, and syncs the linked business's
 // status. If Wompi returned a payment_source_id (card saved), autoRenew
 // turns on — this is the ONLY place autoRenew can become true.
-async function activate(subscriptionId, plan, { paymentSourceId } = {}) {
-  const sub = await prisma.subscription.update({
+async function activate(subscriptionId, plan, { paymentSourceId } = {}, client = prisma) {
+  const sub = await client.subscription.update({
     where: { id: subscriptionId },
     data: {
       status: 'ACTIVE',
@@ -124,7 +124,7 @@ async function activate(subscriptionId, plan, { paymentSourceId } = {}) {
       ...periodDates(),
     },
   });
-  await syncBusinessStatus(sub.businessId, sub);
+  await syncBusinessStatus(sub.businessId, sub, client);
   return sub;
 }
 
@@ -309,14 +309,24 @@ async function renewDue() {
     // es gratis — se extiende el periodo sin cobrar y se consume un mes.
     const freeMonthsAvailable = biz ? biz.freeMonthsEarned - biz.freeMonthsUsed : 0;
     if (freeMonthsAvailable > 0) {
-      await prisma.business.update({
-        where: { id: sub.businessId },
-        data: { freeMonthsUsed: { increment: 1 } },
+      // A-05: guard optimista + atomicidad. Reclama la renovación avanzando el
+      // periodo condicionado a currentPeriodEnd; si otro cron ya la reclamó
+      // (count !== 1) no se consume otro mes gratis. Claim + consumo del mes
+      // dentro de una única $transaction.
+      const claimed = await prisma.$transaction(async (tx) => {
+        const claim = await tx.subscription.updateMany({
+          where: { id: sub.id, currentPeriodEnd: sub.currentPeriodEnd },
+          data: { status: 'ACTIVE', ...periodDates(sub.currentPeriodEnd) },
+        });
+        if (claim.count !== 1) return false; // otro cron ya renovó esta suscripción
+        await tx.business.update({
+          where: { id: sub.businessId },
+          data: { freeMonthsUsed: { increment: 1 } },
+        });
+        return true;
       });
-      const updated = await prisma.subscription.update({
-        where: { id: sub.id },
-        data: { status: 'ACTIVE', ...periodDates(sub.currentPeriodEnd) },
-      });
+      if (!claimed) continue;
+      const updated = await prisma.subscription.findUnique({ where: { id: sub.id } });
       await syncBusinessStatus(updated.businessId, updated);
       renewed++; freeMonthsApplied++;
       continue;
@@ -327,6 +337,25 @@ async function renewDue() {
     const discountPct = creditAvailable ? REFERRER_DISCOUNT_PCT : 0;
 
     const canAutoCharge = sub.autoRenew && sub.paymentSourceId && sub.billingPlan;
+
+    // A-05: guard optimista de idempotencia ANTES de cobrar en la pasarela.
+    // Reclama la renovación avanzando el periodo, condicionado a que
+    // currentPeriodEnd siga siendo el que leímos. Si otro cron concurrente/
+    // duplicado ya reclamó esta suscripción (count !== 1), NO se cobra —
+    // esto es lo que evita el doble cobro de la tarjeta. El cobro (llamada
+    // externa a Wompi) va fuera de cualquier $transaction a propósito.
+    //
+    // Claim PESIMISTA: el mismo updateMany que avanza el periodo fija también
+    // status a PAST_DUE (estado seguro no-billing-active). Así, si el proceso
+    // muere entre el claim y la escritura final de status, la suscripción queda
+    // PAST_DUE (negocio inactivo, visible) en vez de ACTIVE-sin-cobrar. El
+    // happy-path la devuelve a ACTIVE tras un cobro aprobado (más abajo).
+    const claim = await prisma.subscription.updateMany({
+      where: { id: sub.id, currentPeriodEnd: sub.currentPeriodEnd },
+      data: { status: 'PAST_DUE', ...periodDates(sub.currentPeriodEnd) },
+    });
+    if (claim.count !== 1) continue; // ya reclamada por otra ejecución del cron
+
     const approved = canAutoCharge && await chargeRenewal(sub, { discountPct });
 
     // El crédito solo se descuenta si el cobro con descuento fue aprobado.
@@ -337,15 +366,14 @@ async function renewDue() {
       });
     }
 
-    const updated = approved
-      ? await prisma.subscription.update({
-          where: { id: sub.id },
-          data: { status: 'ACTIVE', ...periodDates(sub.currentPeriodEnd) },
-        })
-      : await prisma.subscription.update({
-          where: { id: sub.id },
-          data: { status: 'PAST_DUE' },
-        });
+    // El periodo ya se avanzó en el claim y el status quedó PAST_DUE (seguro).
+    // Aprobado → promover a ACTIVE; fallo → ya está PAST_DUE (negocio inactivo
+    // aunque el periodo se haya movido). Reafirmamos ambos estados de forma
+    // idempotente.
+    const updated = await prisma.subscription.update({
+      where: { id: sub.id },
+      data: { status: approved ? 'ACTIVE' : 'PAST_DUE' },
+    });
 
     await syncBusinessStatus(updated.businessId, updated);
     approved ? renewed++ : markedPastDue++;

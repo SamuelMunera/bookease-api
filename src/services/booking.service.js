@@ -6,6 +6,34 @@ const { bookingToUTCMs } = require('../utils/timezone');
 const { retryOnConflict } = require('../utils/retry');
 const { assertBillingActive } = require('./subscription.service');
 
+// Espejo de slot.service.buildBlocks: un bloque para fulltime, dos para
+// part_time. Se replica aquí porque slot.service no lo exporta y la validación
+// de reserva DEBE usar exactamente la misma construcción de bloques que el motor
+// de slots, o los horarios del segundo bloque part-time serían rechazados (A-01).
+function buildBlocks(sched) {
+  const blocks = [{ start: toMinutes(sched.startTime), end: toMinutes(sched.endTime) }];
+  if (sched.scheduleType === 'part_time' && sched.secondStartTime && sched.secondEndTime) {
+    blocks.push({ start: toMinutes(sched.secondStartTime), end: toMinutes(sched.secondEndTime) });
+  }
+  return blocks;
+}
+
+// Espejo de slot.service.nowInTimezone (no exportada): "hoy" (YYYY-MM-DD) y el
+// minuto-del-día actual en una timezone dada. Se usa para no rechazar reservas
+// de HOY según el reloj UTC del servidor (A-02).
+function nowInTimezone(timezone) {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  }).formatToParts(now).reduce((acc, p) => { acc[p.type] = p.value; return acc; }, {});
+  const dateStr = `${parts.year}-${parts.month}-${parts.day}`;
+  const hour = parts.hour === '24' ? 0 : Number(parts.hour);
+  const minutes = hour * 60 + Number(parts.minute);
+  return { dateStr, minutes };
+}
+
 const BOOKING_INCLUDE = {
   client: { select: { id: true, name: true, email: true, phone: true } },
   professional: {
@@ -73,13 +101,18 @@ async function stampBookingPrice(booking) {
   }
 }
 
-async function createBooking({ clientId, professionalId, serviceId, date, startTime }) {
+async function createBooking({ clientId, professionalId, serviceId, date, startTime, source, guestName, createClient }) {
   await assertBillingActive(professionalId);
 
   const localDate = parseLocalDate(date);
-  const now = new Date();
-  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  if (localDate < today) throw new Error('Cannot book a past date');
+  // A-02: la validación de "fecha/hora pasada" se hace en la timezone del
+  // negocio/profesional, no con el reloj UTC del servidor. A las 20:00 en Bogotá
+  // aún es HOY, no "mañana UTC", así que una reserva de hoy no debe rechazarse.
+  const bookingTz = await getTimezoneForBooking(professionalId);
+  const { dateStr: todayStr, minutes: nowMinutes } = nowInTimezone(bookingTz);
+  if (date < todayStr) throw new Error('Cannot book a past date');
+  if (date === todayStr && toMinutes(startTime) < nowMinutes)
+    throw new Error('Cannot book a past time');
 
   const [_dy, _dm, _dd] = date.split('-').map(Number);
   const dayOfWeek = new Date(_dy, _dm - 1, _dd).getDay();
@@ -106,22 +139,24 @@ async function createBooking({ clientId, professionalId, serviceId, date, startT
         where: { professionalId_weekStart_dayOfWeek: { professionalId, weekStart, dayOfWeek } },
       });
 
-      let dayStartMin, dayEndMin, isActive;
+      let sched, isActive;
       if (override) {
-        isActive    = override.isActive;
-        dayStartMin = toMinutes(override.startTime);
-        dayEndMin   = toMinutes(override.endTime);
+        isActive = override.isActive;
+        sched    = override;
       } else {
-        const schedule = await tx.schedule.findUnique({
+        sched = await tx.schedule.findUnique({
           where: { professionalId_dayOfWeek: { professionalId, dayOfWeek } },
         });
-        isActive    = schedule?.isActive ?? false;
-        dayStartMin = schedule ? toMinutes(schedule.startTime) : 0;
-        dayEndMin   = schedule ? toMinutes(schedule.endTime)   : 0;
+        isActive = sched?.isActive ?? false;
       }
 
       if (!isActive) throw new Error('Professional not available on this day');
-      if (slotStart < dayStartMin || slotEnd > dayEndMin)
+      // A-01: aceptar el slot si cae COMPLETO dentro de cualquier bloque (fulltime
+      // o los dos bloques part_time), usando la misma construcción que el motor de
+      // slots. Antes sólo se comparaba contra el primer bloque, y todo horario del
+      // segundo bloque part-time fallaba con "Slot is outside working hours".
+      const blocks = sched ? buildBlocks(sched) : [];
+      if (!blocks.some((b) => slotStart >= b.start && slotEnd <= b.end))
         throw new Error('Slot is outside working hours');
 
       const exceptions = await tx.scheduleException.findMany({
@@ -151,8 +186,26 @@ async function createBooking({ clientId, professionalId, serviceId, date, startT
         throw err;
       }
 
+      // M-05: si viene un cliente invitado a crear (reserva manual sin cuenta
+      // existente), se crea DENTRO de la transacción y sólo DESPUÉS de validar el
+      // slot. Así un slot inválido revierte todo y no deja usuarios huérfanos, y
+      // cada reintento no acumula cuentas fantasma.
+      let effectiveClientId = clientId;
+      if (!effectiveClientId && createClient) {
+        const created = await tx.user.create({ data: createClient });
+        effectiveClientId = created.id;
+      }
+      if (!effectiveClientId) throw new Error('Client is required');
+
       return tx.booking.create({
-        data: { clientId, professionalId, serviceId, date: localDate, startTime, endTime, status: 'CONFIRMED' },
+        data: {
+          clientId: effectiveClientId, professionalId, serviceId,
+          date: localDate, startTime, endTime, status: 'CONFIRMED',
+          // M-05: source/guestName se estampan en el mismo insert (antes eran un
+          // update posterior).
+          ...(source ? { source } : {}),
+          ...(guestName ? { guestName } : {}),
+        },
         include: BOOKING_INCLUDE,
       });
     },
@@ -279,16 +332,21 @@ async function confirmBooking(id, ownerId) {
 
 async function rescheduleBooking(id, clientId, { date, startTime }) {
   const localDate = parseLocalDate(date);
-  const now = new Date();
-  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  if (localDate < today) throw new Error('Cannot reschedule to a past date');
 
   // Validate cancellation policy before allowing reschedule
   const existingForPolicy = await prisma.booking.findUnique({ where: { id } });
+  let rescheduleTz = 'America/Bogota';
   if (existingForPolicy) {
     const { minHours, timezone } = await getCancelPolicy(existingForPolicy.professionalId);
+    rescheduleTz = timezone;
     assertCancellationWindow(existingForPolicy, minHours, timezone);
   }
+
+  // A-02: "fecha/hora pasada" en la timezone del negocio/profesional, no UTC.
+  const { dateStr: todayStr, minutes: nowMinutes } = nowInTimezone(rescheduleTz);
+  if (date < todayStr) throw new Error('Cannot reschedule to a past date');
+  if (date === todayStr && toMinutes(startTime) < nowMinutes)
+    throw new Error('Cannot reschedule to a past time');
 
   const rescheduled = await retryOnConflict(() => prisma.$transaction(
     async (tx) => {
@@ -325,21 +383,21 @@ async function rescheduleBooking(id, clientId, { date, startTime }) {
       const rOverride = await tx.scheduleOverride.findUnique({
         where: { professionalId_weekStart_dayOfWeek: { professionalId, weekStart: rWeekStart, dayOfWeek } },
       });
-      let rIsActive, rDayStart, rDayEnd;
+      let rSched, rIsActive;
       if (rOverride) {
         rIsActive = rOverride.isActive;
-        rDayStart = toMinutes(rOverride.startTime);
-        rDayEnd   = toMinutes(rOverride.endTime);
+        rSched    = rOverride;
       } else {
-        const schedule = await tx.schedule.findUnique({
+        rSched = await tx.schedule.findUnique({
           where: { professionalId_dayOfWeek: { professionalId, dayOfWeek } },
         });
-        rIsActive = schedule?.isActive ?? false;
-        rDayStart = schedule ? toMinutes(schedule.startTime) : 0;
-        rDayEnd   = schedule ? toMinutes(schedule.endTime)   : 0;
+        rIsActive = rSched?.isActive ?? false;
       }
       if (!rIsActive) throw new Error('Professional not available on this day');
-      if (slotStart < rDayStart || slotEnd > rDayEnd)
+      // A-01: aceptar si el slot cae COMPLETO dentro de cualquier bloque
+      // (fulltime o los dos bloques part_time), igual que el motor de slots.
+      const rBlocks = rSched ? buildBlocks(rSched) : [];
+      if (!rBlocks.some((b) => slotStart >= b.start && slotEnd <= b.end))
         throw new Error('Slot is outside working hours');
 
       const exceptions = await tx.scheduleException.findMany({
@@ -367,9 +425,13 @@ async function rescheduleBooking(id, clientId, { date, startTime }) {
         throw err;
       }
 
+      // F-009: no forzar status:'CONFIRMED'. Si la cita estaba PENDING (esperando
+      // aprobación manual del negocio), reagendar no debe saltarla a CONFIRMED sin
+      // aprobación. Los estados terminales ya se bloquean arriba (TERMINAL_STATUSES),
+      // así que preservar el estado previo es seguro.
       return tx.booking.update({
         where: { id },
-        data: { date: localDate, startTime, endTime, status: 'CONFIRMED' },
+        data: { date: localDate, startTime, endTime },
         include: BOOKING_INCLUDE,
       });
     },
@@ -416,6 +478,12 @@ async function createManualBooking({ creatorId, creatorRole, professionalId, ser
     ? await prisma.user.findUnique({ where: { email: lookupEmail } })
     : null;
 
+  // M-05: para el invitado sin cuenta, NO se crea el User aquí (antes de validar
+  // el slot). Se prepara la data y se difiere su creación al interior de la
+  // transacción de createBooking, que sólo la ejecuta si el slot es válido.
+  let resolvedClientId = client ? client.id : null;
+  let createClient = null;
+
   if (!client) {
     const bcrypt = require('bcryptjs');
     const crypto = require('crypto');
@@ -424,7 +492,8 @@ async function createManualBooking({ creatorId, creatorRole, professionalId, ser
       // cada cita (eso generaba usuarios CLIENT fantasma, acumulables y
       // enumerables). Se reutiliza un único usuario placeholder por negocio
       // (o por profesional independiente). El nombre real del cliente vive en
-      // booking.guestName, no en el User.
+      // booking.guestName, no en el User. El upsert es idempotente, así que no
+      // deja huérfanos aunque createBooking falle después.
       const walkInEmail = pro.businessId
         ? `walkin-${pro.businessId}@slotly.internal`
         : `walkin-pro-${professionalId}@slotly.internal`;
@@ -440,28 +509,28 @@ async function createManualBooking({ creatorId, creatorRole, professionalId, ser
           role:     'CLIENT',
         },
       });
+      resolvedClientId = client.id;
     } else {
       const tempPass = crypto.randomBytes(16).toString('hex');
-      client = await prisma.user.create({
-        data: {
-          name:     clientName || (lookupEmail ? lookupEmail.split('@')[0] : 'Cliente'),
-          email:    lookupEmail || `guest-${crypto.randomBytes(8).toString('hex')}@slotly.internal`,
-          password: await bcrypt.hash(tempPass, 12),
-          role:     'CLIENT',
-          ...(clientPhone ? { phone: clientPhone } : {}),
-        },
-      });
+      createClient = {
+        name:     clientName || (lookupEmail ? lookupEmail.split('@')[0] : 'Cliente'),
+        email:    lookupEmail || `guest-${crypto.randomBytes(8).toString('hex')}@slotly.internal`,
+        password: await bcrypt.hash(tempPass, 12),
+        role:     'CLIENT',
+        ...(clientPhone ? { phone: clientPhone } : {}),
+      };
     }
   }
 
-  // Reuse core booking logic (validates schedule, conflicts, etc.)
-  const booking = await createBooking({ clientId: client.id, professionalId, serviceId, date, startTime });
-
-  // Stamp source and guest name
-  return prisma.booking.update({
-    where: { id: booking.id },
-    data: { source: safeSource, guestName: clientName || null },
-    include: BOOKING_INCLUDE,
+  // Reuse core booking logic (validates schedule, conflicts, etc.). El invitado
+  // (createClient) se crea dentro de la transacción tras validar el slot, y
+  // source/guestName se estampan en el mismo insert (M-05).
+  return createBooking({
+    clientId: resolvedClientId,
+    professionalId, serviceId, date, startTime,
+    source: safeSource,
+    guestName: clientName || null,
+    createClient,
   });
 }
 
@@ -524,4 +593,4 @@ async function markComplete(id, userId) {
   });
 }
 
-module.exports = { createBooking, getUserBookings, cancelBooking, cancelBookingAsOwner, getBusinessBookings, confirmBooking, rescheduleBooking, createManualBooking, markNoShow, markComplete };
+module.exports = { createBooking, getUserBookings, cancelBooking, cancelBookingAsOwner, getBusinessBookings, confirmBooking, rescheduleBooking, createManualBooking, markNoShow, markComplete, getCancelPolicy, assertCancellationWindow, nowInTimezone };

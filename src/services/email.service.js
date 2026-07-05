@@ -15,6 +15,18 @@ function isReal(email) {
   return email && typeof email === 'string' && !email.endsWith('@slotly.internal');
 }
 
+// Privacidad (LOG-01): nunca logueamos correos de clientes en claro. Enmascara
+// la parte local dejando la primera letra + dominio, p.ej. "c***@dominio.com".
+// Preserva null/valores no-email para no romper el JSON de los logs.
+function maskEmail(email) {
+  if (!email || typeof email !== 'string') return email ?? null;
+  const at = email.indexOf('@');
+  if (at <= 0) return '***';
+  const local = email.slice(0, at);
+  const domain = email.slice(at + 1);
+  return `${local[0]}***@${domain}`;
+}
+
 function fmtDate(d) {
   return new Date(String(d).slice(0, 10) + 'T00:00:00')
     .toLocaleDateString('es-CO', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
@@ -252,7 +264,8 @@ async function sendFeedbackNotification(report) {
  * callers collect the results and decide whether to raise.
  */
 async function sendOne({ bookingId, kind, recipient, subject, html }) {
-  const meta = { bookingId, kind, to: recipient, subject, ts: new Date().toISOString() };
+  // Log-safe meta: el correo del destinatario va enmascarado (LOG-01).
+  const meta = { bookingId, kind, to: maskEmail(recipient), subject, ts: new Date().toISOString() };
   try {
     const result = await getResend().emails.send({ from: FROM, to: recipient, subject, html });
     if (result?.error) {
@@ -325,8 +338,9 @@ async function sendBookingConfirmation(booking) {
   }
   console.log('[email] RESOLVED', JSON.stringify({
     bookingId: booking.id, kind: 'confirmation',
-    client: isReal(clientEmail) ? clientEmail : null,
-    business: businessRecipients(clientEmail, proEmail, businessEmail),
+    // Correos enmascarados para no filtrar PII a los logs (LOG-01).
+    client: isReal(clientEmail) ? maskEmail(clientEmail) : null,
+    business: businessRecipients(clientEmail, proEmail, businessEmail).map(maskEmail),
   }));
   await runBatch('confirmation', booking.id, jobs);
 }

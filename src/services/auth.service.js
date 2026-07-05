@@ -150,7 +150,9 @@ async function changePassword(userId, { currentPassword, newPassword }) {
   if (!valid) throw new Error('Contraseña actual incorrecta');
 
   const hashed = await bcrypt.hash(newPassword, 12);
-  await prisma.user.update({ where: { id: userId }, data: { password: hashed } });
+  // S-005: registrar el instante del cambio para revocar los JWT emitidos antes
+  // (el middleware authenticate compara iat del token contra passwordChangedAt).
+  await prisma.user.update({ where: { id: userId }, data: { password: hashed, passwordChangedAt: new Date() } });
 }
 
 async function forgotPassword(email) {
@@ -229,6 +231,12 @@ async function googleAuth(accessToken, role = 'CLIENT') {
     throw new Error('Token de Google inválido');
   }
   if (!clientId) {
+    // S-008: fail-fast en producción — sin GOOGLE_CLIENT_ID el audience check se
+    // omitiría y el token podría ser sustituido por uno de otra app. En dev solo
+    // avisamos (igual que JWT_SECRET/ALLOWED_ORIGIN).
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('GOOGLE_CLIENT_ID no está configurado: no se puede validar el audience del token de Google');
+    }
     console.warn('[auth] GOOGLE_CLIENT_ID not set — audience check skipped. Set it in production.');
   }
 
