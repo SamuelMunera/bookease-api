@@ -43,12 +43,23 @@ async function getPasswordChangedAt(userId) {
 }
 
 async function authenticate(req, res, next) {
+  // Prioridad: Authorization Bearer (flujo original) cuando está presente.
+  // Fallback: cookie de sesión `token` (HttpOnly) solo si no hay Bearer. Así un
+  // Bearer válido nunca queda ensombrecido por una cookie obsoleta. Marcamos en
+  // req.authViaCookie para que el middleware CSRF sepa si la auth vino por cookie.
+  let token;
+  let authViaCookie = false;
   const header = req.headers.authorization;
-  if (!header || !header.startsWith('Bearer ')) {
+  if (header && header.startsWith('Bearer ')) {
+    token = header.split(' ')[1];
+  } else if (req.cookies && req.cookies.token) {
+    token = req.cookies.token;
+    authViaCookie = true;
+  } else {
     return res.status(401).json({ error: 'Token required' });
   }
+  req.authViaCookie = authViaCookie;
 
-  const token = header.split(' ')[1];
   let decoded;
   try {
     decoded = jwt.verify(token, process.env.JWT_SECRET);

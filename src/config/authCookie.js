@@ -5,6 +5,14 @@ const crypto = require('crypto');
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
+// Flag de servidor que gatea TODO el comportamiento cookie+CSRF.
+// Default OFF: solo `AUTH_COOKIE_ENABLED === 'true'` habilita el modo cookie.
+// Con el flag OFF no se plantan cookies y el CSRF es no-op => comportamiento
+// byte-idéntico al flujo Bearer actual (cero riesgo de lockout).
+function authCookieEnabled() {
+  return process.env.AUTH_COOKIE_ENABLED === 'true';
+}
+
 // Parsea JWT_EXPIRES_IN (p.ej. '7d', '12h', '30m', '3600s', o número en segundos)
 // a milisegundos. Si no es parseable, cae a 7 días.
 function parseExpiresToMs(raw) {
@@ -55,6 +63,11 @@ function generateCsrfToken() {
 // Setea la cookie `token` (HttpOnly) y una cookie `csrfToken` legible por JS.
 // Devuelve el valor CSRF generado por si el caller quiere usarlo.
 function setAuthCookies(res, token) {
+  // Gate crítico: si el modo cookie no está habilitado, NO plantar ninguna
+  // cookie. Así, con el frontend en modo Bearer (default), la cookie `token`
+  // nunca se envía y csrfProtection nunca se activa.
+  if (!authCookieEnabled()) return undefined;
+
   const base = baseCookieOptions();
 
   // Cookie de auth: HttpOnly
@@ -82,4 +95,4 @@ function clearAuthCookies(res) {
   res.clearCookie('csrfToken', { ...opts, httpOnly: false });
 }
 
-module.exports = { setAuthCookies, clearAuthCookies, generateCsrfToken, parseExpiresToMs };
+module.exports = { setAuthCookies, clearAuthCookies, generateCsrfToken, parseExpiresToMs, authCookieEnabled };

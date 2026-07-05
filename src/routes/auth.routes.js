@@ -10,6 +10,7 @@ router.patch('/change-password', authenticate,           authController.changePa
 router.post('/forgot-password',  forgotPasswordLimiter,  authController.forgotPassword);
 router.post('/reset-password',   resetPasswordLimiter,   authController.resetPassword);
 router.post('/google',           loginLimiter,           authController.googleAuth);
+router.post('/logout',                                   authController.logout);
 router.patch('/me',              authenticate,           authController.updateMe);
 
 module.exports = router;

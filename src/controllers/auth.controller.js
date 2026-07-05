@@ -1,8 +1,12 @@
 const authService = require('../services/auth.service');
+const { setAuthCookies, clearAuthCookies } = require('../config/authCookie');
 
 async function register(req, res) {
   try {
     const result = await authService.register(req.body);
+    // ADITIVO: emitir cookies (auth HttpOnly + csrf). El body sigue devolviendo
+    // {user, token} para no romper el flujo Bearer existente.
+    if (result && result.token) setAuthCookies(res, result.token);
     res.status(201).json(result);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -22,6 +26,7 @@ async function login(req, res) {
       return res.status(400).json({ error: 'context inválido' });
     }
     const result = await authService.login({ email, password, audience, context });
+    if (result && result.token) setAuthCookies(res, result.token);
     res.json(result);
   } catch (err) {
     res.status(err.status || 401).json({ error: err.message });
@@ -36,6 +41,8 @@ async function switchContext(req, res) {
       return res.status(400).json({ error: 'role inválido' });
     }
     const result = await authService.switchContext(req.user.id, role);
+    // El token cambia al cambiar de contexto: refrescar cookies (y rotar CSRF).
+    if (result && result.token) setAuthCookies(res, result.token);
     res.json(result);
   } catch (err) {
     res.status(err.status || 400).json({ error: err.message });
@@ -82,6 +89,7 @@ async function googleAuth(req, res) {
     const { accessToken, role } = req.body;
     if (!accessToken) return res.status(400).json({ error: 'accessToken requerido' });
     const result = await authService.googleAuth(accessToken, role);
+    if (result && result.token) setAuthCookies(res, result.token);
     res.json(result);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -108,4 +116,11 @@ async function updateMe(req, res) {
   }
 }
 
-module.exports = { register, login, switchContext, changePassword, forgotPassword, resetPassword, googleAuth, updateMe };
+// Cierra la sesión por cookie: limpia auth + csrf. Idempotente; el flujo Bearer
+// no depende de esto (el cliente Bearer simplemente descarta su token).
+async function logout(_req, res) {
+  clearAuthCookies(res);
+  res.status(200).json({ ok: true });
+}
+
+module.exports = { register, login, switchContext, changePassword, forgotPassword, resetPassword, googleAuth, updateMe, logout };

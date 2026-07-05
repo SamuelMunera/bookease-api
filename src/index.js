@@ -64,12 +64,43 @@ app.use(cors({
     if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
     cb(new Error('Not allowed by CORS'));
   },
+  credentials: true, // permite enviar/recibir la cookie de sesión cross-origin
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token'],
   maxAge: 3600,
 }));
 
 app.use(express.json({ limit: '50kb' }));
+
+// Parser de cookies mínimo e inline (sin cookie-parser). Solo LECTURA:
+// rellena req.cookies con un objeto { nombre: valor }. La ESCRITURA de cookies
+// usa res.cookie/res.clearCookie (Express nativo, no requiere cookie-parser).
+app.use((req, _res, next) => {
+  const header = req.headers.cookie;
+  const cookies = {};
+  if (header) {
+    for (const part of header.split(';')) {
+      const idx = part.indexOf('=');
+      if (idx === -1) continue;
+      const name = part.slice(0, idx).trim();
+      if (!name) continue;
+      let value = part.slice(idx + 1).trim();
+      // Los valores pueden ir entre comillas dobles según RFC 6265.
+      if (value.length >= 2 && value[0] === '"' && value[value.length - 1] === '"') {
+        value = value.slice(1, -1);
+      }
+      try { value = decodeURIComponent(value); } catch { /* valor no codificado: usar tal cual */ }
+      if (!(name in cookies)) cookies[name] = value;
+    }
+  }
+  req.cookies = cookies;
+  next();
+});
+
+// Protección CSRF (double-submit). Se aplica globalmente pero solo actúa sobre
+// métodos mutantes con sesión por cookie; el flujo Bearer queda intacto.
+const { csrfProtection } = require('./middleware/csrf');
+app.use(csrfProtection);
 
 // Rate limiters
 const generalLimiter = rateLimit({
