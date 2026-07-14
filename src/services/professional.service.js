@@ -284,6 +284,10 @@ async function setMySchedule(userId, days) {
       });
     })
   );
+  // El recurrente aplica a TODAS las semanas: sin esto, cualquier override
+  // previo ("Guardar solo esta semana") seguiría tapando el nuevo horario
+  // tanto en el editor (getWeekSchedule) como en los slots (slot.service).
+  await prisma.scheduleOverride.deleteMany({ where: { professionalId: prof.id } });
   return results;
 }
 
@@ -364,10 +368,23 @@ async function create(businessId, callerId, data) {
 async function findByBusiness(businessId) {
   // Solo campos públicos: nunca exponer userId, country, normalizaciones, etc.
   // isBookable=false oculta al profesional (p.ej. dueño que pausó su agenda).
-  return prisma.professional.findMany({
+  const rows = await prisma.professional.findMany({
     where: { businessId, isBookable: true },
-    select: { id: true, name: true, bio: true, specialty: true, avatarUrl: true },
+    select: {
+      id: true, name: true, bio: true, specialty: true, avatarUrl: true,
+      // Membresía pro<->servicio (many-to-many implícito), NO ProfessionalServiceConfig.
+      // Habilita el filtrado servicio->profesional en el cliente. Son IDs ya públicos.
+      services: { select: { id: true } },
+    },
   });
+  return rows.map((p) => ({
+    id: p.id,
+    name: p.name,
+    bio: p.bio,
+    specialty: p.specialty,
+    avatarUrl: p.avatarUrl,
+    serviceIds: p.services.map((s) => s.id),
+  }));
 }
 
 async function findHomeProfessionals({ city, country } = {}) {
