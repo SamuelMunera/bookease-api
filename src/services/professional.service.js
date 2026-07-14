@@ -259,20 +259,41 @@ async function getMySchedule(userId) {
 
 function toMin(t) { const [h, m] = t.split(':').map(Number); return h * 60 + m; }
 
-function validateDay({ scheduleType = 'fulltime', startTime, endTime, secondStartTime, secondEndTime, isActive }) {
+// Error de validación apto para mostrarse al usuario final. El controller solo
+// expone err.message cuando code === 'VALIDATION'; cualquier otro error (p.ej.
+// PrismaClientValidationError) responde un genérico para no pintar estructura
+// interna en pantalla.
+function validationError(msg) {
+  const err = new Error(msg);
+  err.code = 'VALIDATION';
+  return err;
+}
+
+function validateDay({ dayOfWeek, scheduleType = 'fulltime', startTime, endTime, secondStartTime, secondEndTime, isActive }) {
+  if (!Number.isInteger(dayOfWeek) || dayOfWeek < 0 || dayOfWeek > 6) throw validationError('dayOfWeek debe ser un entero entre 0 y 6');
   if (!isActive) return;
-  if (!startTime || !endTime) throw new Error('startTime y endTime son requeridos');
-  if (toMin(startTime) >= toMin(endTime)) throw new Error(`Bloque 1: inicio debe ser anterior al fin (${startTime} >= ${endTime})`);
+  if (!startTime || !endTime) throw validationError('startTime y endTime son requeridos');
+  if (toMin(startTime) >= toMin(endTime)) throw validationError(`Bloque 1: inicio debe ser anterior al fin (${startTime} >= ${endTime})`);
   if (scheduleType === 'part_time') {
-    if (!secondStartTime || !secondEndTime) throw new Error('Turno partido requiere ambos bloques de horario');
-    if (toMin(secondStartTime) >= toMin(secondEndTime)) throw new Error('Bloque 2: inicio debe ser anterior al fin');
-    if (toMin(secondStartTime) < toMin(endTime)) throw new Error('El segundo bloque debe comenzar después de que termine el primero (sin solapamiento)');
+    if (!secondStartTime || !secondEndTime) throw validationError('Turno partido requiere ambos bloques de horario');
+    if (toMin(secondStartTime) >= toMin(secondEndTime)) throw validationError('Bloque 2: inicio debe ser anterior al fin');
+    if (toMin(secondStartTime) < toMin(endTime)) throw validationError('El segundo bloque debe comenzar después de que termine el primero (sin solapamiento)');
   }
+}
+
+// Lunes de la semana actual como Date a medianoche UTC — la misma clave con la
+// que parseDate guarda ScheduleOverride.weekStart.
+function currentWeekStart() {
+  const now = new Date();
+  const dow = now.getDay();
+  const diff = dow === 0 ? -6 : 1 - dow;
+  const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + diff);
+  return new Date(Date.UTC(monday.getFullYear(), monday.getMonth(), monday.getDate()));
 }
 
 async function setMySchedule(userId, days) {
   const prof = await prisma.professional.findUnique({ where: { userId } });
-  if (!prof) throw new Error('Professional profile not found');
+  if (!prof) throw validationError('Professional profile not found');
   days.forEach(validateDay);
   // Transacción: upserts + borrado de overrides deben aplicarse juntos. A
   // medias dejaría overrides viejos tapando el recurrente recién guardado
@@ -286,10 +307,14 @@ async function setMySchedule(userId, days) {
         create: { professionalId: prof.id, dayOfWeek, ...data },
       });
     }),
-    // El recurrente aplica a TODAS las semanas: sin esto, cualquier override
-    // previo ("Guardar solo esta semana") seguiría tapando el nuevo horario
-    // tanto en el editor (getWeekSchedule) como en los slots (slot.service).
-    prisma.scheduleOverride.deleteMany({ where: { professionalId: prof.id } }),
+    // El recurrente debe aplicar desde YA: los overrides de semanas pasadas y
+    // de la actual lo taparían en el editor (getWeekSchedule) y en los slots
+    // (slot.service). Los de semanas FUTURAS se conservan: son excepciones
+    // intencionales (p.ej. vacaciones) y borrarlas en silencio causaría
+    // overbooking; «Restablecer semana» las elimina explícitamente.
+    prisma.scheduleOverride.deleteMany({
+      where: { professionalId: prof.id, weekStart: { lte: currentWeekStart() } },
+    }),
   ]);
   // El último resultado es el deleteMany; la API devuelve solo los días.
   return results.slice(0, days.length);
@@ -330,7 +355,7 @@ async function getWeekSchedule(userId, weekStart) {
 
 async function setWeekSchedule(userId, weekStart, days) {
   const prof = await prisma.professional.findUnique({ where: { userId } });
-  if (!prof) throw new Error('Professional profile not found');
+  if (!prof) throw validationError('Professional profile not found');
   days.forEach(validateDay);
   const ws = parseDate(weekStart);
   return Promise.all(days.map(({ dayOfWeek, startTime, endTime, isActive, scheduleType = 'fulltime', secondStartTime = null, secondEndTime = null }) => {
@@ -345,7 +370,7 @@ async function setWeekSchedule(userId, weekStart, days) {
 
 async function deleteWeekSchedule(userId, weekStart) {
   const prof = await prisma.professional.findUnique({ where: { userId } });
-  if (!prof) throw new Error('Professional profile not found');
+  if (!prof) throw validationError('Professional profile not found');
   const ws = parseDate(weekStart);
   await prisma.scheduleOverride.deleteMany({ where: { professionalId: prof.id, weekStart: ws } });
 }

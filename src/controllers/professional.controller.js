@@ -59,13 +59,22 @@ async function getMySchedule(req, res) {
   } catch (err) { res.status(500).json({ error: "Internal server error" }); }
 }
 
+// Solo los errores marcados como VALIDATION exponen su mensaje al usuario;
+// el resto (p.ej. errores internos de Prisma) responden un genérico ahora que
+// el cliente muestra err.message en pantalla.
+function scheduleErrorResponse(res, err, generic) {
+  if (err.code === 'VALIDATION') return res.status(400).json({ error: err.message });
+  console.error(err);
+  return res.status(400).json({ error: generic });
+}
+
 async function setMySchedule(req, res) {
   try {
     const { days } = req.body;
     if (!Array.isArray(days)) return res.status(400).json({ error: 'days must be an array' });
     const result = await professionalService.setMySchedule(req.user.id, days);
     res.json(result);
-  } catch (err) { res.status(400).json({ error: err.message }); }
+  } catch (err) { scheduleErrorResponse(res, err, 'No se pudo guardar el horario'); }
 }
 
 async function create(req, res) {
@@ -130,14 +139,14 @@ async function setWeekSchedule(req, res) {
     if (!Array.isArray(days)) return res.status(400).json({ error: 'days must be an array' });
     const result = await professionalService.setWeekSchedule(req.user.id, req.params.weekStart, days);
     res.json(result);
-  } catch (err) { res.status(400).json({ error: err.message }); }
+  } catch (err) { scheduleErrorResponse(res, err, 'No se pudo guardar el horario'); }
 }
 
 async function deleteWeekSchedule(req, res) {
   try {
     await professionalService.deleteWeekSchedule(req.user.id, req.params.weekStart);
     res.status(204).send();
-  } catch (err) { res.status(400).json({ error: err.message }); }
+  } catch (err) { scheduleErrorResponse(res, err, 'No se pudo restablecer la semana'); }
 }
 
 async function getProfessionalServices(req, res) {
