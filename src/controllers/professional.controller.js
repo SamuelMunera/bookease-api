@@ -3,6 +3,7 @@ const professionalService = require('../services/professional.service');
 const prisma = require('../config/database');
 const { uploadFile } = require('../config/storage');
 const upload = require('../middleware/upload');
+const { computeServicePricing, getActivePromotions } = require('../utils/pricing');
 
 async function register(req, res) {
   try {
@@ -144,6 +145,7 @@ async function getProfessionalServices(req, res) {
     const prof = await prisma.professional.findUnique({
       where: { id: req.params.id },
       select: {
+        businessId: true,
         services: { select: { id: true, name: true, description: true, duration: true, price: true, categoryId: true } },
         serviceConfigs: { select: { serviceId: true, customDuration: true } },
       },
@@ -156,7 +158,15 @@ async function getProfessionalServices(req, res) {
       ...s,
       duration: cfg.get(s.id) ?? s.duration,
     }));
-    res.json(services);
+    // Mismo pricing que service.service.findByBusiness: promos activas del negocio
+    // del profesional. Evita volver al precio full al seleccionar el profesional.
+    const now = new Date();
+    const promotions = await prisma.promotion.findMany({
+      where: { businessId: prof.businessId, isActive: true, startDate: { lte: now }, endDate: { gte: now } },
+    });
+    const active = getActivePromotions(promotions, now);
+    const withPricing = services.map(s => ({ ...s, pricing: computeServicePricing(s, active, now) }));
+    res.json(withPricing);
   } catch (err) { res.status(500).json({ error: "Internal server error" }); }
 }
 

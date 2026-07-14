@@ -1,5 +1,16 @@
 const prisma = require('../config/database');
 
+const VALID_TYPES = ['PERCENTAGE', 'FIXED', 'CUSTOM_PRICE'];
+
+// Prisma devuelve discountValue/customPrice como Decimal (se serializa a string
+// en JSON). El cliente necesita number|null para reeditar sin "perder" el valor.
+// Misma forma canónica que getPromotedBusinesses.
+const serializePromo = (p) => ({
+  ...p,
+  discountValue: p.discountValue != null ? Number(p.discountValue) : null,
+  customPrice:   p.customPrice   != null ? Number(p.customPrice)   : null,
+});
+
 async function getMyPromotions(req, res) {
   try {
     const business = await prisma.business.findFirst({ where: { ownerId: req.user.id } });
@@ -8,7 +19,7 @@ async function getMyPromotions(req, res) {
       where: { businessId: business.id },
       orderBy: { createdAt: 'desc' },
     });
-    res.json(promotions);
+    res.json(promotions.map(serializePromo));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Internal server error' });
@@ -26,7 +37,6 @@ async function createPromotion(req, res) {
     if (!startDate || !endDate) return res.status(400).json({ error: 'Fechas de inicio y fin son obligatorias' });
     if (new Date(startDate) >= new Date(endDate)) return res.status(400).json({ error: 'La fecha de fin debe ser posterior a la de inicio' });
 
-    const VALID_TYPES = ['PERCENTAGE', 'FIXED', 'CUSTOM_PRICE'];
     const safeType = VALID_TYPES.includes(discountType) ? discountType : 'PERCENTAGE';
 
     // Validación por tipo de descuento.
@@ -52,8 +62,9 @@ async function createPromotion(req, res) {
         title:         title.trim(),
         description:   description?.trim() || null,
         discountType:  safeType,
-        discountValue: discountValue != null ? parseFloat(discountValue) : null,
-        customPrice:   customPrice != null ? parseFloat(customPrice) : null,
+        // Coherencia por tipo: CUSTOM_PRICE no lleva discountValue y viceversa.
+        discountValue: safeType === 'CUSTOM_PRICE' ? null : numValue,
+        customPrice:   safeType === 'CUSTOM_PRICE' ? numCustom : null,
         serviceIds:    Array.isArray(serviceIds) ? serviceIds : [],
         startDate:     new Date(startDate),
         endDate:       new Date(endDate),
@@ -61,7 +72,7 @@ async function createPromotion(req, res) {
         message:       message?.trim() || null,
       },
     });
-    res.status(201).json(promotion);
+    res.status(201).json(serializePromo(promotion));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Internal server error' });
@@ -78,8 +89,6 @@ async function updatePromotion(req, res) {
 
     const { title, description, discountType, discountValue, customPrice, serviceIds, startDate, endDate, isActive, message } = req.body;
 
-    const VALID_TYPES = ['PERCENTAGE', 'FIXED', 'CUSTOM_PRICE'];
-
     // endDate debe ser posterior a startDate. Se valida contra los valores
     // entrantes y, para los no provistos, contra los ya guardados en la promo.
     if (startDate !== undefined || endDate !== undefined) {
@@ -88,14 +97,44 @@ async function updatePromotion(req, res) {
       if (effStart >= effEnd) return res.status(400).json({ error: 'La fecha de fin debe ser posterior a la de inicio' });
     }
 
+    // Tipo y valores EFECTIVOS: lo que trae el body si viene, si no lo persistido.
+    const effType = discountType !== undefined && VALID_TYPES.includes(discountType)
+      ? discountType
+      : promo.discountType;
+    const effValue = discountValue !== undefined
+      ? (discountValue != null ? parseFloat(discountValue) : null)
+      : (promo.discountValue != null ? Number(promo.discountValue) : null);
+    const effCustom = customPrice !== undefined
+      ? (customPrice != null ? parseFloat(customPrice) : null)
+      : (promo.customPrice != null ? Number(promo.customPrice) : null);
+
+    // Revalidar igual que createPromotion: evita porcentaje>100 (pricing.js lo
+    // clamparía a servicio gratis) o montos/precios no positivos.
+    if (effType === 'PERCENTAGE') {
+      if (effValue == null || isNaN(effValue) || effValue <= 0 || effValue > 100) {
+        return res.status(400).json({ error: 'El porcentaje debe ser mayor que 0 y como máximo 100' });
+      }
+    } else if (effType === 'FIXED') {
+      if (effValue == null || isNaN(effValue) || effValue <= 0) {
+        return res.status(400).json({ error: 'El monto de descuento debe ser mayor que 0' });
+      }
+    } else if (effType === 'CUSTOM_PRICE') {
+      if (effCustom == null || isNaN(effCustom) || effCustom <= 0) {
+        return res.status(400).json({ error: 'El precio especial debe ser mayor que 0' });
+      }
+    }
+
     const updated = await prisma.promotion.update({
       where: { id: req.params.id },
       data: {
         ...(title !== undefined       && { title: title.trim() }),
         ...(description !== undefined && { description: description?.trim() || null }),
-        ...(discountType !== undefined && VALID_TYPES.includes(discountType) && { discountType }),
-        ...(discountValue !== undefined && { discountValue: discountValue != null ? parseFloat(discountValue) : null }),
-        ...(customPrice !== undefined  && { customPrice: customPrice != null ? parseFloat(customPrice) : null }),
+        // Se escribe SIEMPRE el trío tipo/valor/precio de forma coherente para no
+        // dejar poblado el campo stale del tipo anterior (p.ej. customPrice viejo
+        // al pasar a PERCENTAGE). CUSTOM_PRICE => discountValue:null y viceversa.
+        discountType:  effType,
+        discountValue: effType === 'CUSTOM_PRICE' ? null : effValue,
+        customPrice:   effType === 'CUSTOM_PRICE' ? effCustom : null,
         ...(serviceIds !== undefined   && { serviceIds: Array.isArray(serviceIds) ? serviceIds : [] }),
         ...(startDate !== undefined    && { startDate: new Date(startDate) }),
         ...(endDate !== undefined      && { endDate: new Date(endDate) }),
@@ -103,7 +142,7 @@ async function updatePromotion(req, res) {
         ...(message !== undefined      && { message: message?.trim() || null }),
       },
     });
-    res.json(updated);
+    res.json(serializePromo(updated));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Internal server error' });
@@ -139,7 +178,7 @@ async function getPublicPromotions(req, res) {
       },
       orderBy: { startDate: 'asc' },
     });
-    res.json(promotions);
+    res.json(promotions.map(serializePromo));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Internal server error' });
