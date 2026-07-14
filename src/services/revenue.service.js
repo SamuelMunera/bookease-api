@@ -67,11 +67,14 @@ async function getBusinessRevenue(ownerId) {
 async function getProfessionalRevenue(userId) {
   const prof = await prisma.professional.findUnique({
     where: { userId },
-    include: { business: { select: { showRevenueToProf: true } } },
+    include: { business: { select: { showRevenueToProf: true, ownerId: true } } },
   });
   if (!prof) throw new Error('Professional profile not found');
   if (!prof.businessId) throw new Error('Not linked to a business');
-  if (!prof.business?.showRevenueToProf) throw new Error('Revenue not visible');
+  // El toggle showRevenueToProf restringe al equipo; el dueño del negocio
+  // siempre puede ver sus propios ingresos como profesional.
+  const isOwner = prof.business?.ownerId === userId;
+  if (!prof.business?.showRevenueToProf && !isOwner) throw new Error('Revenue not visible');
 
   const { dayStart, dayEnd, weekStart, weekEnd, monthStart, monthEnd } = ranges();
 
