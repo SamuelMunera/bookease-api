@@ -274,21 +274,25 @@ async function setMySchedule(userId, days) {
   const prof = await prisma.professional.findUnique({ where: { userId } });
   if (!prof) throw new Error('Professional profile not found');
   days.forEach(validateDay);
-  const results = await Promise.all(
-    days.map(({ dayOfWeek, startTime, endTime, isActive, scheduleType = 'fulltime', secondStartTime = null, secondEndTime = null }) => {
+  // Transacción: upserts + borrado de overrides deben aplicarse juntos. A
+  // medias dejaría overrides viejos tapando el recurrente recién guardado
+  // (o un recurrente parcial con días de la versión anterior).
+  const results = await prisma.$transaction([
+    ...days.map(({ dayOfWeek, startTime, endTime, isActive, scheduleType = 'fulltime', secondStartTime = null, secondEndTime = null }) => {
       const data = { startTime, endTime, isActive: isActive ?? true, scheduleType, secondStartTime, secondEndTime };
       return prisma.schedule.upsert({
         where: { professionalId_dayOfWeek: { professionalId: prof.id, dayOfWeek } },
         update: data,
         create: { professionalId: prof.id, dayOfWeek, ...data },
       });
-    })
-  );
-  // El recurrente aplica a TODAS las semanas: sin esto, cualquier override
-  // previo ("Guardar solo esta semana") seguiría tapando el nuevo horario
-  // tanto en el editor (getWeekSchedule) como en los slots (slot.service).
-  await prisma.scheduleOverride.deleteMany({ where: { professionalId: prof.id } });
-  return results;
+    }),
+    // El recurrente aplica a TODAS las semanas: sin esto, cualquier override
+    // previo ("Guardar solo esta semana") seguiría tapando el nuevo horario
+    // tanto en el editor (getWeekSchedule) como en los slots (slot.service).
+    prisma.scheduleOverride.deleteMany({ where: { professionalId: prof.id } }),
+  ]);
+  // El último resultado es el deleteMany; la API devuelve solo los días.
+  return results.slice(0, days.length);
 }
 
 function parseDate(dateStr) {
