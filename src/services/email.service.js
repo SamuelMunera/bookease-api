@@ -73,6 +73,7 @@ function layout(content) {
   .value{color:#E0E0F0;font-weight:600}
   .badge{display:inline-block;padding:3px 10px;border-radius:99px;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
   .badge-confirmed{background:rgba(212,168,83,.15);color:#D4A853;border:1px solid rgba(212,168,83,.3)}
+  .badge-pending{background:rgba(255,184,0,.12);color:#FFB800;border:1px solid rgba(255,184,0,.3)}
   .badge-cancelled{background:rgba(239,68,68,.12);color:#f87171;border:1px solid rgba(239,68,68,.25)}
   .badge-reminder{background:rgba(124,92,252,.15);color:#A78BFA;border:1px solid rgba(124,92,252,.3)}
   .cta{display:block;margin:24px 0 0;padding:13px 24px;background:#D4A853;color:#0A0808 !important;text-decoration:none;border-radius:10px;font-weight:700;font-size:14px;text-align:center}
@@ -84,12 +85,20 @@ function layout(content) {
 }
 
 /* ── Confirmation ─────────────────────────────────────────── */
-function confirmHtml({ to, name, service, date, startTime, endTime, proOrClient, isHome, address }) {
+// pending: la reserva nació PENDING (online) y aún espera confirmación del
+// negocio/profesional; el copy no debe afirmar "confirmada" todavía.
+function confirmHtml({ to, name, service, date, startTime, endTime, proOrClient, isHome, address, pending }) {
   const isClient = to === 'client';
-  const heading  = isClient ? '¡Reserva confirmada!' : 'Nueva reserva agendada';
+  const heading  = isClient
+    ? (pending ? 'Recibimos tu reserva' : '¡Reserva confirmada!')
+    : (pending ? 'Nueva reserva por confirmar' : 'Nueva reserva agendada');
   const sub      = isClient
-    ? `Hola <strong style="color:#E0E0F0">${escHtml(name)}</strong>, tu cita quedó registrada.`
-    : `Hola <strong style="color:#E0E0F0">${escHtml(name)}</strong>, tienes una nueva cita.`;
+    ? (pending
+        ? `Hola <strong style="color:#E0E0F0">${escHtml(name)}</strong>, tu cita quedó registrada y está pendiente de confirmación. Te avisaremos cuando la confirmen.`
+        : `Hola <strong style="color:#E0E0F0">${escHtml(name)}</strong>, tu cita quedó registrada.`)
+    : (pending
+        ? `Hola <strong style="color:#E0E0F0">${escHtml(name)}</strong>, tienes una nueva cita pendiente. Confírmala desde tu agenda.`
+        : `Hola <strong style="color:#E0E0F0">${escHtml(name)}</strong>, tienes una nueva cita.`);
 
   const rows = [
     [isClient ? 'Profesional' : 'Cliente', escHtml(proOrClient)],
@@ -105,7 +114,7 @@ function confirmHtml({ to, name, service, date, startTime, endTime, proOrClient,
       <div class="logo">Slot<span>ly</span></div>
     </div>
     <div class="body">
-      <span class="badge badge-confirmed">Confirmada</span>
+      <span class="badge ${pending ? 'badge-pending' : 'badge-confirmed'}">${pending ? 'Pendiente' : 'Confirmada'}</span>
       <h1 class="title" style="margin-top:12px">${heading}</h1>
       <p class="sub">${sub}</p>
       <table class="detail-table">${rows.map(([l,v]) => `<tr><td class="label">${l}</td><td class="value">${v}</td></tr>`).join('')}</table>
@@ -356,23 +365,28 @@ function businessRecipients(clientEmail, ...emails) {
   return out;
 }
 
-async function sendBookingConfirmation(booking) {
+// clientOnly: al confirmar una reserva PENDING solo se re-notifica al cliente
+// (el lado negocio ya recibió el aviso de nueva reserva cuando se creó).
+async function sendBookingConfirmation(booking, { clientOnly = false } = {}) {
   const { clientName, clientEmail, proName, proEmail, businessEmail, service, date, startTime, endTime, isHome, address } = extract(booking);
+  // La reserva online nace PENDING: el copy debe decir "recibida/por confirmar",
+  // no "confirmada". Al confirmarse de verdad, status ya es CONFIRMED.
+  const pending = booking.status === 'PENDING';
   const jobs = [];
 
   if (isReal(clientEmail)) {
     jobs.push({
       bookingId: booking.id, kind: 'confirmation:client', recipient: clientEmail,
-      subject: `Reserva confirmada – ${service}`,
-      html: confirmHtml({ to:'client', name:clientName, service, date, startTime, endTime, proOrClient:proName, isHome, address }),
+      subject: pending ? `Reserva recibida – ${service}` : `Reserva confirmada – ${service}`,
+      html: confirmHtml({ to:'client', name:clientName, service, date, startTime, endTime, proOrClient:proName, isHome, address, pending }),
     });
   }
   // Lado negocio: profesional + dueño del negocio (deduplicados).
-  for (const recipient of businessRecipients(clientEmail, proEmail, businessEmail)) {
+  if (!clientOnly) for (const recipient of businessRecipients(clientEmail, proEmail, businessEmail)) {
     jobs.push({
       bookingId: booking.id, kind: 'confirmation:business', recipient,
-      subject: `Nueva reserva – ${service}`,
-      html: confirmHtml({ to:'pro', name:proName, service, date, startTime, endTime, proOrClient:clientName, isHome, address }),
+      subject: pending ? `Nueva reserva por confirmar – ${service}` : `Nueva reserva – ${service}`,
+      html: confirmHtml({ to:'pro', name:proName, service, date, startTime, endTime, proOrClient:clientName, isHome, address, pending }),
     });
   }
   console.log('[email] RESOLVED', JSON.stringify({

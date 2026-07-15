@@ -203,7 +203,11 @@ async function createBooking({ clientId, professionalId, serviceId, date, startT
       return tx.booking.create({
         data: {
           clientId: effectiveClientId, professionalId, serviceId,
-          date: localDate, startTime, endTime, status: 'CONFIRMED',
+          // Reserva online del cliente (sin source) → PENDING: la confirma el
+          // negocio/profesional desde su agenda. Reserva manual del staff
+          // (source explícito: MANUAL/WHATSAPP/CALL/PRESENCIAL) → CONFIRMED
+          // directo, la crea el propio staff y no necesita aprobación.
+          date: localDate, startTime, endTime, status: source ? 'CONFIRMED' : 'PENDING',
           // M-05: source/guestName se estampan en el mismo insert (antes eran un
           // update posterior).
           ...(source ? { source } : {}),
@@ -430,13 +434,17 @@ async function cancelBookingAsProfessional(id, userId) {
   return cancelled;
 }
 
-async function confirmBooking(id, ownerId) {
+async function confirmBooking(id, userId) {
   const booking = await prisma.booking.findUnique({
     where: { id },
-    include: { professional: { include: { business: { select: { ownerId: true } } } } },
+    include: { professional: { select: { userId: true, business: { select: { ownerId: true } } } } },
   });
   if (!booking) throw new Error('Booking not found');
-  if (!booking.professional.business || booking.professional.business.ownerId !== ownerId) throw new Error('Forbidden');
+  // Puede confirmar el dueño del negocio o el propio profesional de la cita
+  // (imprescindible para profesionales independientes, sin negocio).
+  const isOwner  = booking.professional.business?.ownerId === userId;
+  const isOwnPro = booking.professional.userId === userId;
+  if (!isOwner && !isOwnPro) throw new Error('Forbidden');
   if (booking.status !== 'PENDING') throw new Error('Only PENDING bookings can be confirmed');
 
   const confirmed = await prisma.booking.update({
@@ -444,6 +452,10 @@ async function confirmBooking(id, ownerId) {
     data: { status: 'CONFIRMED' },
     include: BOOKING_INCLUDE,
   });
+
+  // Este es el momento real de "confirmada": avisar al cliente. El lado
+  // negocio no se re-notifica (ya recibió el aviso de nueva reserva al crearse).
+  await emailService.sendBookingConfirmation(confirmed, { clientOnly: true }).catch(e => console.error('[email] confirm:', e.message));
 
   return confirmed;
 }

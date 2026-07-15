@@ -107,7 +107,9 @@ async function createHomeBooking({ clientId, professionalId, homeServiceId, date
           date: localDate,
           startTime,
           endTime,
-          status: 'CONFIRMED',
+          // Reserva online del cliente → PENDING: la confirma el profesional
+          // desde su agenda (mismo criterio que booking.service.createBooking).
+          status: 'PENDING',
           type: 'HOME_SERVICE',
           clientAddress,
         },
