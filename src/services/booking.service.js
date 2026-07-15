@@ -407,6 +407,29 @@ async function cancelBookingAsOwner(id, ownerId) {
   return cancelled;
 }
 
+// Cancelación hecha por el profesional desde su agenda. Nunca genera multa
+// (las multas aplican solo a cancelaciones del cliente) ni valida ventana: el
+// profesional gestiona su agenda libremente. El cliente recibe el correo de
+// cancelación estándar.
+async function cancelBookingAsProfessional(id, userId) {
+  const booking = await prisma.booking.findUnique({
+    where: { id },
+    include: { professional: { select: { userId: true } } },
+  });
+  if (!booking) throw new Error('Booking not found');
+  if (booking.professional?.userId !== userId) throw new Error('Forbidden');
+  if (TERMINAL_STATUSES.has(booking.status))
+    throw new Error('No se puede cancelar una cita cancelada, completada o marcada como no asistida.');
+
+  const cancelled = await prisma.booking.update({
+    where: { id },
+    data: { status: 'CANCELLED' },
+    include: BOOKING_INCLUDE,
+  });
+  await emailService.sendBookingCancellation(cancelled).catch(e => console.error('[email] cancellation:', e.message));
+  return cancelled;
+}
+
 async function confirmBooking(id, ownerId) {
   const booking = await prisma.booking.findUnique({
     where: { id },
@@ -425,17 +448,25 @@ async function confirmBooking(id, ownerId) {
   return confirmed;
 }
 
-async function rescheduleBooking(id, clientId, { date, startTime }) {
+async function rescheduleBooking(id, userId, { date, startTime }) {
   const localDate = parseLocalDate(date);
 
-  // Validate cancellation policy before allowing reschedule
-  const existingForPolicy = await prisma.booking.findUnique({ where: { id } });
-  let rescheduleTz = 'America/Bogota';
-  if (existingForPolicy) {
-    const { minHours, timezone } = await getCancelPolicy(existingForPolicy.professionalId);
-    rescheduleTz = timezone;
-    assertCancellationWindow(existingForPolicy, minHours, timezone);
-  }
+  // Puede aplazar el cliente de la cita o el profesional que la atiende.
+  const existingForPolicy = await prisma.booking.findUnique({
+    where: { id },
+    include: { professional: { select: { userId: true } } },
+  });
+  if (!existingForPolicy) throw new Error('Booking not found');
+  const actor = existingForPolicy.clientId === userId ? 'client'
+    : existingForPolicy.professional?.userId === userId ? 'professional'
+    : null;
+  if (!actor) throw new Error('Forbidden');
+
+  const { minHours, timezone } = await getCancelPolicy(existingForPolicy.professionalId);
+  const rescheduleTz = timezone;
+  // La ventana de cancelación restringe al CLIENTE; el profesional gestiona su
+  // propia agenda sin esa restricción.
+  if (actor === 'client') assertCancellationWindow(existingForPolicy, minHours, timezone);
 
   // A-02: "fecha/hora pasada" en la timezone del negocio/profesional, no UTC.
   const { dateStr: todayStr, minutes: nowMinutes } = nowInTimezone(rescheduleTz);
@@ -453,7 +484,8 @@ async function rescheduleBooking(id, clientId, { date, startTime }) {
         },
       });
       if (!existing) throw new Error('Booking not found');
-      if (existing.clientId !== clientId) throw new Error('Forbidden');
+      // Propiedad ya validada fuera de la transacción (cliente o profesional de
+      // la cita); clientId/professionalId son inmutables en un booking.
       // C-19: no se puede reagendar una cita en estado terminal (cancelada,
       // completada o no-show) — eso revivía estados terminales y falseaba métricas.
       if (TERMINAL_STATUSES.has(existing.status))
@@ -532,6 +564,14 @@ async function rescheduleBooking(id, clientId, { date, startTime }) {
     },
     { isolationLevel: 'Serializable' }
   ));
+
+  // Notificar el cambio de fecha/hora a la otra parte: al cliente si movió el
+  // profesional; al negocio/profesional si movió el cliente.
+  await emailService.sendBookingReschedule(rescheduled, {
+    actor,
+    oldDate: existingForPolicy.date,
+    oldStartTime: existingForPolicy.startTime,
+  }).catch(e => console.error('[email] reschedule:', e.message));
 
   return rescheduled;
 }
@@ -697,4 +737,4 @@ async function markComplete(id, userId) {
   });
 }
 
-module.exports = { createBooking, getUserBookings, cancelBooking, cancelBookingAsOwner, getBusinessBookings, confirmBooking, rescheduleBooking, createManualBooking, markNoShow, markComplete, getCancelPolicy, assertCancellationWindow, nowInTimezone, resolveClientCancellation, createCancellationFee, attachClientDebt, feePolicyOf };
+module.exports = { createBooking, getUserBookings, cancelBooking, cancelBookingAsOwner, cancelBookingAsProfessional, getBusinessBookings, confirmBooking, rescheduleBooking, createManualBooking, markNoShow, markComplete, getCancelPolicy, assertCancellationWindow, nowInTimezone, resolveClientCancellation, createCancellationFee, attachClientDebt, feePolicyOf };

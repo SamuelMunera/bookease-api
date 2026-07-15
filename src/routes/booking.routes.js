@@ -20,6 +20,7 @@ router.post('/', authenticate, bookingController.create);
 router.get('/me', authenticate, bookingController.myBookings);
 router.patch('/:id/cancel', authenticate, bookingController.cancel);
 router.patch('/:id/cancel-owner', authenticate, requireRole('BUSINESS_OWNER'), bookingController.cancelAsOwner);
+router.patch('/:id/cancel-professional', authenticate, requireRole('PROFESSIONAL'), bookingController.cancelAsProfessional);
 router.patch('/:id/confirm', authenticate, requireRole('BUSINESS_OWNER'), bookingController.confirm);
 router.patch('/:id/reschedule', authenticate, bookingController.reschedule);
 router.patch('/:id/no-show', authenticate, bookingController.noShow);

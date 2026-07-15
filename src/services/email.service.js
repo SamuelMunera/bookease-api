@@ -151,6 +151,39 @@ function cancelHtml({ to, name, service, date, startTime, proOrClient, feeAmount
   `);
 }
 
+/* ── Reschedule ───────────────────────────────────────────── */
+function rescheduleHtml({ to, name, service, proOrClient, oldDate, oldTime, date, startTime, endTime, byProfessional }) {
+  const isClient = to === 'client';
+  const heading  = isClient ? 'Tu cita cambió de horario' : 'Cita reprogramada';
+  const sub      = isClient
+    ? (byProfessional
+        ? `Hola <strong style="color:#E0E0F0">${escHtml(name)}</strong>, el profesional <strong style="color:#E0E0F0">${escHtml(proOrClient)}</strong> cambió la fecha u hora de tu cita. Este es el nuevo horario:`
+        : `Hola <strong style="color:#E0E0F0">${escHtml(name)}</strong>, tu cita fue reprogramada.`)
+    : `Hola <strong style="color:#E0E0F0">${escHtml(name)}</strong>, ${escHtml(proOrClient)} aplazó la siguiente cita.`;
+
+  const rows = [
+    [isClient ? 'Profesional' : 'Cliente', escHtml(proOrClient)],
+    ['Servicio',    escHtml(service)],
+    ['Antes',       `${escHtml(oldDate)} · ${escHtml(oldTime)}`],
+    ['Nueva fecha', escHtml(date)],
+    ['Nueva hora',  endTime ? `${escHtml(startTime)} – ${escHtml(endTime)}` : escHtml(startTime)],
+  ];
+
+  return layout(`
+    <div class="header">
+      <div class="logo">Slot<span>ly</span></div>
+    </div>
+    <div class="body">
+      <span class="badge badge-reminder">Reprogramada</span>
+      <h1 class="title" style="margin-top:12px">${heading}</h1>
+      <p class="sub">${sub}</p>
+      <table class="detail-table">${rows.map(([l,v]) => `<tr><td class="label">${l}</td><td class="value">${v}</td></tr>`).join('')}</table>
+      ${isClient ? `<a href="${APP_URL}/my-bookings" class="cta">Ver mis reservas</a>` : ''}
+    </div>
+    <div class="footer">Slotly · No respondas a este correo.</div>
+  `);
+}
+
 /* ── Reminder ─────────────────────────────────────────────── */
 function reminderHtml({ name, service, date, startTime, endTime, proOrClient, isHome, address }) {
   const rows = [
@@ -372,6 +405,32 @@ async function sendBookingCancellation(booking, { feeAmount = null } = {}) {
   await runBatch('cancellation', booking.id, jobs);
 }
 
+// Notificación de cambio de fecha/hora. actor = quién movió la cita:
+// 'professional' → correo al cliente; 'client' → correo al negocio/profesional.
+async function sendBookingReschedule(booking, { actor, oldDate, oldStartTime }) {
+  const { clientName, clientEmail, proName, proEmail, businessEmail, service, date, startTime, endTime } = extract(booking);
+  const old = { oldDate: fmtDate(oldDate), oldTime: oldStartTime };
+  const jobs = [];
+
+  if (actor === 'professional' && isReal(clientEmail)) {
+    jobs.push({
+      bookingId: booking.id, kind: 'reschedule:client', recipient: clientEmail,
+      subject: `Tu cita de ${service} cambió de horario`,
+      html: rescheduleHtml({ to:'client', name:clientName, service, proOrClient:proName, ...old, date, startTime, endTime, byProfessional:true }),
+    });
+  }
+  if (actor === 'client') {
+    for (const recipient of businessRecipients(clientEmail, proEmail, businessEmail)) {
+      jobs.push({
+        bookingId: booking.id, kind: 'reschedule:business', recipient,
+        subject: `Cita reprogramada – ${service}`,
+        html: rescheduleHtml({ to:'pro', name:proName, service, proOrClient:clientName, ...old, date, startTime, endTime, byProfessional:false }),
+      });
+    }
+  }
+  await runBatch('reschedule', booking.id, jobs);
+}
+
 async function sendBookingReminder(booking) {
   const { clientName, clientEmail, proName, service, date, startTime, endTime, isHome, address } = extract(booking);
   const jobs = [];
@@ -385,4 +444,4 @@ async function sendBookingReminder(booking) {
   await runBatch('reminder', booking.id, jobs);
 }
 
-module.exports = { sendBookingConfirmation, sendBookingCancellation, sendBookingReminder, sendFeedbackNotification, sendAppointmentVerification };
+module.exports = { sendBookingConfirmation, sendBookingCancellation, sendBookingReschedule, sendBookingReminder, sendFeedbackNotification, sendAppointmentVerification };
