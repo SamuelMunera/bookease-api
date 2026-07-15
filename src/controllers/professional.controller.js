@@ -202,9 +202,14 @@ async function updateBufferTime(req, res) {
 
 async function updateCancelPolicy(req, res) {
   try {
-    const pro = await professionalService.updateCancelPolicy(req.user.id, req.body.cancelMinHours);
-    res.json({ cancelMinHours: pro.cancelMinHours });
-  } catch (err) { res.status(400).json({ error: err.message }); }
+    const pro = await professionalService.updateCancelPolicy(req.user.id, req.body ?? {});
+    res.json({
+      cancelMinHours: pro.cancelMinHours,
+      feeEnabled: pro.cancelFeeEnabled,
+      feeWindowHours: pro.cancelFeeWindowHours,
+      feeAmount: pro.cancelFeeAmount != null ? Number(pro.cancelFeeAmount) : null,
+    });
+  } catch (err) { res.status(err.status || 400).json({ error: err.message }); }
 }
 
 async function updateProfile(req, res) {

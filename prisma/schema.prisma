@@ -54,6 +54,7 @@ model User {
   professional        Professional?
   passwordResetTokens PasswordResetToken[]
   reviews             Review[]
+  cancellationFees    CancellationFee[]
 }
 
 model PasswordResetToken {
@@ -195,6 +196,13 @@ model Professional {
   userId     String?  @unique
   bufferTime     Int      @default(0)
   cancelMinHours Int      @default(0)
+  // Multa por cancelación tardía / no-show. Si está activada, REEMPLAZA el
+  // bloqueo duro de cancelMinHours: el cliente siempre puede cancelar, pero si
+  // lo hace dentro de la ventana se le genera una deuda (CancellationFee).
+  // Sin columna de moneda: se deriva de country, como el resto de precios.
+  cancelFeeEnabled     Boolean  @default(false)
+  cancelFeeWindowHours Int      @default(0)
+  cancelFeeAmount      Decimal? @db.Decimal(10, 2)
   country        String   @default("CO")
   timezone       String   @default("America/Bogota")
   state          String?
@@ -229,6 +237,7 @@ model Professional {
   redeemedCourtesy   CourtesyCode?
   payments           Payment[]
   promoterConversion PromoterConversion?
+  cancellationFees   CancellationFee[]
 }
 
 model ProfessionalPhoto {
@@ -416,10 +425,37 @@ model Booking {
   service      Service?       @relation(fields: [serviceId], references: [id])
   homeService  HomeService?   @relation(fields: [homeServiceId], references: [id])
   client       User           @relation(fields: [clientId], references: [id])
+  cancellationFee CancellationFee?
 
   @@index([professionalId, date])
   @@index([clientId])
   @@index([date, status])
+}
+
+// Deuda generada al cliente por cancelación tardía o no-show, según la política
+// de multa del profesional (cancelFee*). El monto es un snapshot al momento del
+// evento: cambiar la config después no reescribe deudas históricas.
+// bookingId @unique = idempotencia (nunca dos deudas por la misma cita).
+// onDelete Restrict: las deudas deben sobrevivir en reporting; no se borran en
+// cascada al limpiar bookings.
+model CancellationFee {
+  id             String    @id @default(cuid())
+  bookingId      String    @unique
+  professionalId String
+  clientId       String
+  amount         Decimal   @db.Decimal(10, 2)
+  reason         String    @default("LATE_CANCEL") // LATE_CANCEL | NO_SHOW
+  status         String    @default("PENDING")     // PENDING | PAID | FORGIVEN
+  resolvedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  booking      Booking      @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  professional Professional @relation(fields: [professionalId], references: [id], onDelete: Restrict)
+  client       User         @relation(fields: [clientId], references: [id], onDelete: Restrict)
+
+  @@index([professionalId, status])
+  @@index([clientId, status])
 }
 
 model HomeService {

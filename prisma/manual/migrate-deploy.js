@@ -49,7 +49,14 @@ try {
   const pwdFile = path.join(manualDir, '20260705000000_add_password_changed_at.sql');
   run(`npx prisma db execute --file "${pwdFile}" --schema "${schema}"`);
 
-  // 3) Performance indexes (non-critical). DECISION ON CONCURRENTLY:
+  // 3) Multa por cancelación: columnas de política en Professional + tabla
+  //    CancellationFee. SQL idempotente (IF NOT EXISTS / catálogo para FKs).
+  //    Fatal: sin la tabla, cancelar citas con multa activada rompería el
+  //    flujo de cancelación en producción.
+  const feeFile = path.join(manualDir, '20260714000000_cancellation_fee.sql');
+  run(`npx prisma db execute --file "${feeFile}" --schema "${schema}"`);
+
+  // 4) Performance indexes (non-critical). DECISION ON CONCURRENTLY:
   //    CREATE INDEX CONCURRENTLY cannot run inside a transaction block, and
   //    `prisma db execute --file` sends the whole multi-statement file to
   //    Postgres as a single implicit transaction, which would fail. We keep

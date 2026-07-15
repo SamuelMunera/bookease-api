@@ -4,7 +4,7 @@ const { checkCoverage } = require('./homeService.service');
 const emailService = require('./email.service');
 const { retryOnConflict } = require('../utils/retry');
 const { assertBillingActive } = require('./subscription.service');
-const { getCancelPolicy, assertCancellationWindow, nowInTimezone } = require('./booking.service');
+const { nowInTimezone, resolveClientCancellation, createCancellationFee } = require('./booking.service');
 
 const HOME_BOOKING_INCLUDE = {
   client: { select: { id: true, name: true, email: true, phone: true } },
@@ -138,19 +138,23 @@ async function cancelHomeBooking(id, clientId) {
   if (booking.clientId !== clientId) throw new Error('Forbidden');
   if (booking.type !== 'HOME_SERVICE') throw new Error('Not a home service booking');
   if (booking.status === 'CANCELLED') throw new Error('Already cancelled');
-  // M-09: aplicar la política de cancelación (cancelMinHours) igual que
-  // booking.service.cancelBooking. Antes las reservas a domicilio se podían
-  // cancelar fuera de la ventana permitida.
-  const { minHours, timezone } = await getCancelPolicy(booking.professionalId);
-  assertCancellationWindow(booking, minHours, timezone);
+  // M-09: misma política de cancelación que booking.service.cancelBooking.
+  // resolveClientCancellation aplica la regla completa: con multa activada no
+  // hay bloqueo duro (cancela + deuda si es tardío); sin multa, el bloqueo
+  // histórico de cancelMinHours sigue intacto.
+  const feeAmount = await resolveClientCancellation(booking);
 
-  const cancelled = await prisma.booking.update({
-    where: { id },
-    data: { status: 'CANCELLED' },
-    include: HOME_BOOKING_INCLUDE,
+  const cancelled = await prisma.$transaction(async (tx) => {
+    const upd = await tx.booking.update({
+      where: { id },
+      data: { status: 'CANCELLED' },
+      include: HOME_BOOKING_INCLUDE,
+    });
+    if (feeAmount != null) await createCancellationFee(tx, booking, feeAmount, 'LATE_CANCEL');
+    return upd;
   });
-  await emailService.sendBookingCancellation(cancelled).catch(e => console.error('[email] home cancellation:', e.message));
-  return cancelled;
+  await emailService.sendBookingCancellation(cancelled, { feeAmount }).catch(e => console.error('[email] home cancellation:', e.message));
+  return { ...cancelled, feeApplied: feeAmount != null ? { amount: feeAmount } : null };
 }
 
 module.exports = { createHomeBooking, cancelHomeBooking };

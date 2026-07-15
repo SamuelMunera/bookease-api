@@ -38,7 +38,10 @@ const BOOKING_INCLUDE = {
   client: { select: { id: true, name: true, email: true, phone: true } },
   professional: {
     select: {
-      id: true, name: true, businessId: true,
+      id: true, name: true, businessId: true, country: true,
+      // Política de multa: viaja con cada booking para que el cliente vea el
+      // aviso en su modal de cancelación sin otra request.
+      cancelMinHours: true, cancelFeeEnabled: true, cancelFeeWindowHours: true, cancelFeeAmount: true,
       user:     { select: { email: true } },
       business: { select: { name: true, owner: { select: { email: true } } } },
     },
@@ -224,25 +227,49 @@ async function createBooking({ clientId, professionalId, serviceId, date, startT
   return booking;
 }
 
+// Shape público de la política de multa que consumen los clientes (modal de
+// cancelación, BookingPage). Decimal → Number para no serializar strings.
+function feePolicyOf(pro) {
+  return {
+    enabled: pro?.cancelFeeEnabled ?? false,
+    windowHours: pro?.cancelFeeWindowHours ?? 0,
+    amount: pro?.cancelFeeAmount != null ? Number(pro.cancelFeeAmount) : null,
+  };
+}
+
 async function getUserBookings(clientId) {
-  return prisma.booking.findMany({
+  const bookings = await prisma.booking.findMany({
     where: { clientId },
     include: BOOKING_INCLUDE,
     orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
   });
+  // El cliente necesita ver la política de multa junto a cada cita (aviso al
+  // cancelar). Se expone como objeto `cancellationFee` y se retiran los campos
+  // crudos del professional para mantener un único contrato.
+  return bookings.map((b) => ({
+    ...b,
+    professional: b.professional && {
+      ...b.professional,
+      cancellationFee: feePolicyOf(b.professional),
+    },
+  }));
 }
 
-// Returns { minHours, timezone } for a booking
+// Returns { minHours, timezone, fee } for a booking
 async function getCancelPolicy(professionalId) {
   const pro = await prisma.professional.findUnique({
     where:  { id: professionalId },
-    select: { cancelMinHours: true, timezone: true, business: { select: { cancelMinHours: true, timezone: true } } },
+    select: {
+      cancelMinHours: true, timezone: true,
+      cancelFeeEnabled: true, cancelFeeWindowHours: true, cancelFeeAmount: true,
+      business: { select: { cancelMinHours: true, timezone: true } },
+    },
   });
-  if (!pro) return { minHours: 0, timezone: 'America/Bogota' };
+  if (!pro) return { minHours: 0, timezone: 'America/Bogota', fee: feePolicyOf(null) };
   const bizHours = pro.business?.cancelMinHours ?? 0;
   const minHours = bizHours > 0 ? bizHours : (pro.cancelMinHours ?? 0);
   const timezone = pro.business?.timezone || pro.timezone || 'America/Bogota';
-  return { minHours, timezone };
+  return { minHours, timezone, fee: feePolicyOf(pro) };
 }
 
 function assertCancellationWindow(booking, minHours, timezone = 'America/Bogota') {
@@ -259,21 +286,64 @@ function assertCancellationWindow(booking, minHours, timezone = 'America/Bogota'
   }
 }
 
+// REGLA CENTRAL de la multa: si el profesional tiene cancelFeeEnabled=true, la
+// multa REEMPLAZA el bloqueo duro de cancelación (tanto el cancelMinHours del
+// pro como el del negocio que lo pisa): el cliente siempre puede cancelar; si
+// lo hace con menos de cancelFeeWindowHours de anticipación se le genera una
+// deuda (LATE_CANCEL). Con la multa desactivada todo queda exactamente como
+// antes (assertCancellationWindow intacto). Aplica SOLO a cancelaciones del
+// CLIENTE: las del negocio/profesional nunca multan.
+// Devuelve el monto de la multa a aplicar, o null si no corresponde.
+async function resolveClientCancellation(booking) {
+  const { minHours, timezone, fee } = await getCancelPolicy(booking.professionalId);
+  if (!fee.enabled) {
+    assertCancellationWindow(booking, minHours, timezone);
+    return null;
+  }
+  const amount = fee.amount ?? 0;
+  if (fee.windowHours <= 0 || amount <= 0) return null;
+  const bookingMs = bookingToUTCMs(booking.date, booking.startTime, timezone);
+  const hoursLeft = (bookingMs - Date.now()) / 3600000;
+  return hoursLeft < fee.windowHours ? amount : null;
+}
+
+// Crea la deuda dentro de la transacción que cambia el estado de la cita.
+// Idempotente por bookingId @unique (upsert): un reintento no duplica deuda.
+// El monto es snapshot del cancelFeeAmount vigente al momento del evento.
+function createCancellationFee(tx, booking, amount, reason) {
+  return tx.cancellationFee.upsert({
+    where:  { bookingId: booking.id },
+    create: {
+      bookingId: booking.id,
+      professionalId: booking.professionalId,
+      clientId: booking.clientId,
+      amount,
+      reason,
+    },
+    update: {},
+  });
+}
+
 async function cancelBooking(id, clientId) {
   const booking = await prisma.booking.findUnique({ where: { id } });
   if (!booking) throw new Error('Booking not found');
   if (booking.clientId !== clientId) throw new Error('Forbidden');
   if (booking.status === 'CANCELLED') throw new Error('Already cancelled');
-  const { minHours, timezone } = await getCancelPolicy(booking.professionalId);
-  assertCancellationWindow(booking, minHours, timezone);
+  const feeAmount = await resolveClientCancellation(booking);
 
-  const cancelled = await prisma.booking.update({
-    where: { id },
-    data: { status: 'CANCELLED' },
-    include: BOOKING_INCLUDE,
+  // Update + deuda en la MISMA transacción: nunca queda una cancelación sin su
+  // deuda ni una deuda de una cita que no llegó a cancelarse.
+  const cancelled = await prisma.$transaction(async (tx) => {
+    const upd = await tx.booking.update({
+      where: { id },
+      data: { status: 'CANCELLED' },
+      include: BOOKING_INCLUDE,
+    });
+    if (feeAmount != null) await createCancellationFee(tx, booking, feeAmount, 'LATE_CANCEL');
+    return upd;
   });
-  await emailService.sendBookingCancellation(cancelled).catch(e => console.error('[email] cancellation:', e.message));
-  return cancelled;
+  await emailService.sendBookingCancellation(cancelled, { feeAmount }).catch(e => console.error('[email] cancellation:', e.message));
+  return { ...cancelled, feeApplied: feeAmount != null ? { amount: feeAmount } : null };
 }
 
 async function getBusinessBookings(businessId, ownerId, { date, from, to } = {}) {
@@ -287,11 +357,36 @@ async function getBusinessBookings(businessId, ownerId, { date, from, to } = {})
     ? { date: { gte: parseLocalDate(from), lte: parseLocalDate(to) } }
     : {};
 
-  return prisma.booking.findMany({
+  const bookings = await prisma.booking.findMany({
     where: { professional: { businessId }, ...dateFilter },
     include: BOOKING_INCLUDE,
     orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
   });
+  return attachClientDebt(bookings);
+}
+
+// Adjunta a cada booking la deuda PENDIENTE del cliente con el profesional de
+// ESA cita: clientDebt = { pendingCount, pendingTotal } | null. Un solo groupBy
+// para toda la lista (sin N+1). La clave es el par cliente+profesional: la
+// deuda es con cada profesional, no global del negocio.
+async function attachClientDebt(bookings) {
+  if (!bookings.length) return bookings;
+  const clientIds = [...new Set(bookings.map((b) => b.clientId))];
+  const proIds    = [...new Set(bookings.map((b) => b.professionalId))];
+  const groups = await prisma.cancellationFee.groupBy({
+    by: ['clientId', 'professionalId'],
+    where: { status: 'PENDING', clientId: { in: clientIds }, professionalId: { in: proIds } },
+    _count: { _all: true },
+    _sum:   { amount: true },
+  });
+  const debtMap = new Map(groups.map((g) => [
+    `${g.clientId}:${g.professionalId}`,
+    { pendingCount: g._count._all, pendingTotal: Number(g._sum.amount ?? 0) },
+  ]));
+  return bookings.map((b) => ({
+    ...b,
+    clientDebt: debtMap.get(`${b.clientId}:${b.professionalId}`) ?? null,
+  }));
 }
 
 async function cancelBookingAsOwner(id, ownerId) {
@@ -570,10 +665,19 @@ async function markNoShow(id, userId) {
   await assertCanManageBooking(booking, userId);
   const tz = await getTimezoneForBooking(booking.professionalId);
   assertIsInPast(booking, tz);
-  return prisma.booking.update({
-    where: { id },
-    data: { status: 'NO_SHOW' },
-    include: BOOKING_INCLUDE,
+  // No-show multa siempre que la política esté activada (sin ventana: no
+  // presentarse es siempre "tardío"). Misma transacción e idempotencia que la
+  // cancelación tardía.
+  const { fee } = await getCancelPolicy(booking.professionalId);
+  const feeAmount = fee.enabled && (fee.amount ?? 0) > 0 ? fee.amount : null;
+  return prisma.$transaction(async (tx) => {
+    const upd = await tx.booking.update({
+      where: { id },
+      data: { status: 'NO_SHOW' },
+      include: BOOKING_INCLUDE,
+    });
+    if (feeAmount != null) await createCancellationFee(tx, booking, feeAmount, 'NO_SHOW');
+    return upd;
   });
 }
 
@@ -593,4 +697,4 @@ async function markComplete(id, userId) {
   });
 }
 
-module.exports = { createBooking, getUserBookings, cancelBooking, cancelBookingAsOwner, getBusinessBookings, confirmBooking, rescheduleBooking, createManualBooking, markNoShow, markComplete, getCancelPolicy, assertCancellationWindow, nowInTimezone };
+module.exports = { createBooking, getUserBookings, cancelBooking, cancelBookingAsOwner, getBusinessBookings, confirmBooking, rescheduleBooking, createManualBooking, markNoShow, markComplete, getCancelPolicy, assertCancellationWindow, nowInTimezone, resolveClientCancellation, createCancellationFee, attachClientDebt, feePolicyOf };

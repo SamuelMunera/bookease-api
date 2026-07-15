@@ -116,7 +116,7 @@ function confirmHtml({ to, name, service, date, startTime, endTime, proOrClient,
 }
 
 /* ── Cancellation ─────────────────────────────────────────── */
-function cancelHtml({ to, name, service, date, startTime, proOrClient }) {
+function cancelHtml({ to, name, service, date, startTime, proOrClient, feeAmount }) {
   const isClient = to === 'client';
   const heading  = isClient ? 'Tu reserva fue cancelada' : 'Reserva cancelada';
   const sub      = isClient
@@ -129,6 +129,11 @@ function cancelHtml({ to, name, service, date, startTime, proOrClient }) {
     ['Fecha',    escHtml(date)],
     ['Hora',     escHtml(startTime)],
   ];
+  // Multa por cancelación tardía: fila en el detalle + aviso explícito.
+  if (feeAmount != null) rows.push(['Multa', `$${Number(feeAmount).toLocaleString('es-CO')}`]);
+  const feeNote = feeAmount == null ? '' : (isClient
+    ? `<p class="sub" style="color:#f87171">La cancelación fue tardía según la política del profesional: se generó una multa de <strong>$${Number(feeAmount).toLocaleString('es-CO')}</strong> que quedó registrada como deuda pendiente.</p>`
+    : `<p class="sub" style="color:#f87171">Cancelación tardía: se registró una multa de <strong>$${Number(feeAmount).toLocaleString('es-CO')}</strong> como deuda pendiente del cliente.</p>`);
 
   return layout(`
     <div class="header">
@@ -139,6 +144,7 @@ function cancelHtml({ to, name, service, date, startTime, proOrClient }) {
       <h1 class="title" style="margin-top:12px;color:#f87171">${heading}</h1>
       <p class="sub">${sub}</p>
       <table class="detail-table">${rows.map(([l,v]) => `<tr><td class="label">${l}</td><td class="value">${v}</td></tr>`).join('')}</table>
+      ${feeNote}
       ${isClient ? `<a href="${APP_URL}" class="cta">Reservar de nuevo</a>` : ''}
     </div>
     <div class="footer">Slotly · No respondas a este correo.</div>
@@ -345,7 +351,7 @@ async function sendBookingConfirmation(booking) {
   await runBatch('confirmation', booking.id, jobs);
 }
 
-async function sendBookingCancellation(booking) {
+async function sendBookingCancellation(booking, { feeAmount = null } = {}) {
   const { clientName, clientEmail, proName, proEmail, businessEmail, service, date, startTime } = extract(booking);
   const jobs = [];
 
@@ -353,14 +359,14 @@ async function sendBookingCancellation(booking) {
     jobs.push({
       bookingId: booking.id, kind: 'cancellation:client', recipient: clientEmail,
       subject: `Reserva cancelada – ${service}`,
-      html: cancelHtml({ to:'client', name:clientName, service, date, startTime, proOrClient:proName }),
+      html: cancelHtml({ to:'client', name:clientName, service, date, startTime, proOrClient:proName, feeAmount }),
     });
   }
   for (const recipient of businessRecipients(clientEmail, proEmail, businessEmail)) {
     jobs.push({
       bookingId: booking.id, kind: 'cancellation:business', recipient,
       subject: `Reserva cancelada – ${service}`,
-      html: cancelHtml({ to:'pro', name:proName, service, date, startTime, proOrClient:clientName }),
+      html: cancelHtml({ to:'pro', name:proName, service, date, startTime, proOrClient:clientName, feeAmount }),
     });
   }
   await runBatch('cancellation', booking.id, jobs);

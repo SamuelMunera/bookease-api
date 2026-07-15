@@ -5,6 +5,7 @@ const { getPlanLimit } = require('../config/plans');
 const subscriptionService = require('./subscription.service');
 const referralService = require('./referral.service');
 const authService = require('./auth.service');
+const bookingService = require('./booking.service');
 
 async function registerProfessional({ name, email, password, phone, specialty, bio, experience, businessId, offersHomeService, homeServiceArea, country, timezone, state, zipCode, referralCode }) {
   if (!name || !email || !password) throw new Error('name, email and password are required');
@@ -218,7 +219,7 @@ async function getMyProfile(userId) {
 async function getMyBookings(userId) {
   const prof = await prisma.professional.findUnique({ where: { userId } });
   if (!prof) throw new Error('Professional profile not found');
-  return prisma.booking.findMany({
+  const bookings = await prisma.booking.findMany({
     where: { professionalId: prof.id, status: { not: 'CANCELLED' } },
     include: {
       client:       { select: { id: true, name: true, email: true } },
@@ -227,6 +228,9 @@ async function getMyBookings(userId) {
     },
     orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
   });
+  // Badge de deuda en la agenda: clientDebt { pendingCount, pendingTotal } | null
+  // por cliente, en un solo groupBy (sin N+1).
+  return bookingService.attachClientDebt(bookings);
 }
 
 async function getMyServices(userId) {
@@ -461,7 +465,7 @@ async function findHomeProfessionals({ city, country } = {}) {
 }
 
 async function findById(id) {
-  return prisma.professional.findUnique({
+  const pro = await prisma.professional.findUnique({
     where: { id },
     include: {
       business: { select: { id: true, name: true } },
@@ -469,6 +473,10 @@ async function findById(id) {
     },
     // offersHomeService, homeServiceArea included from model columns
   });
+  if (!pro) return pro;
+  // Política de multa en shape público (Decimal → Number) para que BookingPage
+  // muestre el aviso antes de reservar sin parsear los campos crudos.
+  return { ...pro, cancellationFee: bookingService.feePolicyOf(pro) };
 }
 
 async function update(id, ownerId, data) {
@@ -522,13 +530,34 @@ async function saveServiceConfigs(userId, configs) {
   return prisma.professionalServiceConfig.findMany({ where: { professionalId: prof.id } });
 }
 
-async function updateCancelPolicy(userId, cancelMinHours) {
+// Política de cancelación completa: ventana de bloqueo (cancelMinHours) y
+// multa (feeEnabled/feeWindowHours/feeAmount). Todos los campos son opcionales:
+// solo se actualiza lo que llega, así el contrato viejo ({ cancelMinHours })
+// sigue funcionando igual.
+async function updateCancelPolicy(userId, { cancelMinHours, feeEnabled, feeWindowHours, feeAmount } = {}) {
   const pro = await prisma.professional.findUnique({ where: { userId } });
   if (!pro) throw new Error('Professional profile not found');
-  return prisma.professional.update({
-    where: { id: pro.id },
-    data: { cancelMinHours: Math.max(0, parseInt(cancelMinHours, 10) || 0) },
-  });
+
+  const data = {};
+  if (cancelMinHours !== undefined) data.cancelMinHours = Math.max(0, parseInt(cancelMinHours, 10) || 0);
+  if (feeEnabled !== undefined) data.cancelFeeEnabled = !!feeEnabled;
+  if (feeWindowHours !== undefined) data.cancelFeeWindowHours = Math.max(0, parseInt(feeWindowHours, 10) || 0);
+  if (feeAmount !== undefined) {
+    const amount = Number(feeAmount);
+    data.cancelFeeAmount = Number.isFinite(amount) && amount > 0 ? amount : null;
+  }
+
+  // Con la multa activada debe existir un monto válido (>0): el que llega en
+  // este request o el ya guardado. Sin monto la multa no tendría efecto.
+  const willBeEnabled = data.cancelFeeEnabled ?? pro.cancelFeeEnabled;
+  const effectiveAmount = data.cancelFeeAmount !== undefined ? data.cancelFeeAmount : pro.cancelFeeAmount;
+  if (willBeEnabled && !(Number(effectiveAmount) > 0)) {
+    const err = new Error('Para activar la multa debes indicar un valor mayor a 0.');
+    err.status = 400;
+    throw err;
+  }
+
+  return prisma.professional.update({ where: { id: pro.id }, data });
 }
 
 async function updateBufferTime(userId, bufferTime) {
