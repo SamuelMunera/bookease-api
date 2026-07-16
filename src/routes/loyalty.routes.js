@@ -9,9 +9,14 @@ router.get('/me',          authenticate, requireRole('BUSINESS_OWNER'), ctrl.get
 router.put('/me',          authenticate, requireRole('BUSINESS_OWNER'), requireStudioPlan, ctrl.updateMyProgram);
 router.get('/me/clients',  authenticate, requireRole('BUSINESS_OWNER'), requireStudioPlan, ctrl.getMyClients);
 
-// ─── Cliente ────────────────────────────────────────────────────────────────
-router.get('/me/cards',                    authenticate, requireRole('CLIENT'), ctrl.getMyCards);
-router.get('/businesses/:businessId/card', authenticate, requireRole('CLIENT'), ctrl.getMyCardForBusiness);
+// ─── Tarjeta del usuario (cualquier rol) ────────────────────────────────────
+// Sin requireRole: los sellos se ganan por identidad (clientId = req.user.id) sea
+// cual sea el rol activo — un ADMIN, BUSINESS_OWNER o PROFESSIONAL que reserva en
+// un negocio también acumula. Gatear por 'CLIENT' devolvía 403 al ver la tarjeta
+// propia (podías ganar sellos pero no verlos). El controller usa SIEMPRE
+// req.user.id como clientId, así que no hay IDOR: cada quien ve solo su tarjeta.
+router.get('/me/cards',                    authenticate, ctrl.getMyCards);
+router.get('/businesses/:businessId/card', authenticate, ctrl.getMyCardForBusiness);
 
 // ─── Redención en mostrador (owner o profesional del mismo negocio) ─────────
 router.post('/rewards/:rewardId/redeem', authenticate, requireRole('BUSINESS_OWNER', 'PROFESSIONAL'), ctrl.redeemReward);
