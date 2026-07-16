@@ -5,6 +5,7 @@ const emailService = require('./email.service');
 const { bookingToUTCMs } = require('../utils/timezone');
 const { retryOnConflict } = require('../utils/retry');
 const { assertBillingActive } = require('./subscription.service');
+const loyaltyService = require('./loyalty.service');
 
 // Espejo de slot.service.buildBlocks: un bloque para fulltime, dos para
 // part_time. Se replica aquí porque slot.service no lo exporta y la validación
@@ -366,7 +367,8 @@ async function getBusinessBookings(businessId, ownerId, { date, from, to } = {})
     include: BOOKING_INCLUDE,
     orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
   });
-  return attachClientDebt(bookings);
+  const withDebt = await attachClientDebt(bookings);
+  return loyaltyService.attachLoyaltyToBookings(withDebt, businessId);
 }
 
 // Adjunta a cada booking la deuda PENDIENTE del cliente con el profesional de
@@ -742,10 +744,30 @@ async function markComplete(id, userId) {
   await assertCanManageBooking(booking, userId);
   const tz = await getTimezoneForBooking(booking.professionalId);
   assertIsInPast(booking, tz);
-  return prisma.booking.update({
+
+  // Fidelización: la elegibilidad (plan Estudio+, programa activo, cliente con
+  // cuenta real) se resuelve FUERA de la transacción con puras lecturas. Dentro
+  // de la tx solo quedan writes puros, así el único modo de fallo es un fallo
+  // real de DB, que también abortaría el COMPLETED — retry-safe porque el sello
+  // es idempotente (LoyaltyStamp.bookingId @unique). ctx=null => no-op.
+  const bookingForCtx = await prisma.booking.findUnique({
     where: { id },
-    data: { status: 'COMPLETED' },
-    include: BOOKING_INCLUDE,
+    select: {
+      id: true, clientId: true,
+      client: { select: { email: true } },
+      professional: { select: { businessId: true } },
+    },
+  });
+  const ctx = await loyaltyService.getAccrualContext(bookingForCtx);
+
+  return prisma.$transaction(async (tx) => {
+    const upd = await tx.booking.update({
+      where: { id },
+      data: { status: 'COMPLETED' },
+      include: BOOKING_INCLUDE,
+    });
+    if (ctx) await loyaltyService.accrueStampInTx(tx, upd, ctx);
+    return upd;
   });
 }
 

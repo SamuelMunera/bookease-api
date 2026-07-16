@@ -57,4 +57,12 @@ function getPlanById(planId, country) {
   return getPlansForCountry(country).find(p => p.id === planId) ?? null;
 }
 
-module.exports = { PLAN_LIMITS, PLAN_RANK, PLANS_BY_COUNTRY, getPlanLimit, getPlanRank, getPlansForCountry, getPlanById };
+// Fidelización (punch-card): disponible DESDE el plan Estudio, es decir studio
+// y enterprise. Los features de plan son acumulativos: el tier superior nunca
+// pierde un feature del intermedio. Para restringir SOLO a studio (excluyendo
+// enterprise), cambiar el cuerpo a `planId === 'studio'`.
+function isLoyaltyEligiblePlan(planId) {
+  return getPlanRank(planId) >= getPlanRank('studio');
+}
+
+module.exports = { PLAN_LIMITS, PLAN_RANK, PLANS_BY_COUNTRY, getPlanLimit, getPlanRank, getPlansForCountry, getPlanById, isLoyaltyEligiblePlan };

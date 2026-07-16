@@ -137,6 +137,7 @@ app.use('/api/subscriptions', generalLimiter, require('./routes/subscription.rou
 app.use('/api/payments', generalLimiter, require('./routes/payment.routes'));
 app.use('/api/cron', generalLimiter, require('./routes/cron.routes'));
 app.use('/api/promotions', generalLimiter, require('./routes/promotion.routes'));
+app.use('/api/loyalty', generalLimiter, require('./routes/loyalty.routes'));
 app.get('/health', (_, res) => res.json({ status: 'ok' }));
 
 // Public platform stats

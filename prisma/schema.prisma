@@ -55,6 +55,8 @@ model User {
   passwordResetTokens PasswordResetToken[]
   reviews             Review[]
   cancellationFees    CancellationFee[]
+  loyaltyCards        LoyaltyCard[]
+  loyaltyRewards      LoyaltyReward[]
 }
 
 model PasswordResetToken {
@@ -139,6 +141,7 @@ model Business {
   referredBusinesses Business[] @relation("BizReferral")
   referralsMade      BusinessReferral[] @relation("Referrer")
   referralRecord     BusinessReferral?  @relation("Referred")
+  loyaltyProgram     LoyaltyProgram?
 }
 
 // One row per business-to-business referral. The reward for the referrer is
@@ -294,6 +297,7 @@ model Service {
   bookings         Booking[]
   professionals    Professional[]
   serviceConfigs   ProfessionalServiceConfig[]
+  loyaltyPrograms  LoyaltyProgram[]
 }
 
 model ServiceCategory {
@@ -426,6 +430,7 @@ model Booking {
   homeService  HomeService?   @relation(fields: [homeServiceId], references: [id])
   client       User           @relation(fields: [clientId], references: [id])
   cancellationFee CancellationFee?
+  loyaltyStamp    LoyaltyStamp?
 
   @@index([professionalId, date])
   @@index([clientId])
@@ -682,4 +687,90 @@ model Payment {
 
   @@index([businessId])
   @@index([professionalId])
+}
+
+// ─── Fidelización tipo punch-card (plan Estudio) ────────────────────────────
+// Programa configurable por negocio (1:1). Solo se activa/desactiva, nunca se
+// borra: las tarjetas y recompensas históricas cuelgan de él. Snapshot de la
+// config al emitir cada recompensa, mismo principio que CancellationFee.
+
+model LoyaltyProgram {
+  id                String   @id @default(cuid())
+  businessId        String   @unique
+  isActive          Boolean  @default(false)
+  stampsRequired    Int      @default(8)               // 1..20
+  rewardType        String   @default("FREE_SERVICE")  // FREE_SERVICE | DISCOUNT | CUSTOM
+  rewardServiceId   String?                            // requerido si FREE_SERVICE
+  rewardDiscount    Int?                               // % 1..100, requerido si DISCOUNT
+  rewardDescription String?                            // requerido si CUSTOM
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  service  Service? @relation(fields: [rewardServiceId], references: [id], onDelete: SetNull)
+  cards    LoyaltyCard[]
+}
+
+// Progreso por (negocio, cliente). stamps = ciclo actual; totalStamps y
+// cyclesCompleted son histórico para analytics sin recontar filas de sello.
+model LoyaltyCard {
+  id              String   @id @default(cuid())
+  programId       String
+  businessId      String   // denormalizado: consulta directa sin join a program
+  clientId        String
+  stamps          Int      @default(0)
+  totalStamps     Int      @default(0)
+  cyclesCompleted Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  program   LoyaltyProgram  @relation(fields: [programId], references: [id], onDelete: Cascade)
+  client    User            @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  stampsLog LoyaltyStamp[]
+  rewards   LoyaltyReward[]
+
+  @@unique([businessId, clientId])
+  @@index([programId])
+  @@index([clientId])
+}
+
+// Un sello = una cita COMPLETED. bookingId @unique = idempotencia dura (mismo
+// patrón que CancellationFee.bookingId): una cita solo sella una vez.
+model LoyaltyStamp {
+  id        String   @id @default(cuid())
+  cardId    String
+  bookingId String   @unique
+  cycle     Int      // ciclo al que aportó
+  createdAt DateTime @default(now())
+
+  card    LoyaltyCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  booking Booking     @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([cardId])
+}
+
+// Recompensa ganada. Snapshot de la config al momento de ganarla: cambiar el
+// programa después no reescribe recompensas ya emitidas.
+model LoyaltyReward {
+  id                String    @id @default(cuid())
+  cardId            String
+  businessId        String
+  clientId          String
+  status            String    @default("EARNED") // EARNED | REDEEMED
+  rewardType        String
+  rewardServiceId   String?
+  rewardServiceName String?   // snapshot del nombre por si borran el servicio
+  rewardDiscount    Int?
+  rewardDescription String?
+  earnedAt          DateTime  @default(now())
+  redeemedAt        DateTime?
+  redeemedById      String?   // userId del owner/profesional que redimió
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  card   LoyaltyCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  client User        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, status])
+  @@index([clientId, status])
 }

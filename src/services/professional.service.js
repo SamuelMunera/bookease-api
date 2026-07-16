@@ -6,6 +6,7 @@ const subscriptionService = require('./subscription.service');
 const referralService = require('./referral.service');
 const authService = require('./auth.service');
 const bookingService = require('./booking.service');
+const loyaltyService = require('./loyalty.service');
 
 async function registerProfessional({ name, email, password, phone, specialty, bio, experience, businessId, offersHomeService, homeServiceArea, country, timezone, state, zipCode, referralCode }) {
   if (!name || !email || !password) throw new Error('name, email and password are required');
@@ -229,8 +230,10 @@ async function getMyBookings(userId) {
     orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
   });
   // Badge de deuda en la agenda: clientDebt { pendingCount, pendingTotal } | null
-  // por cliente, en un solo groupBy (sin N+1).
-  return bookingService.attachClientDebt(bookings);
+  // por cliente, en un solo groupBy (sin N+1). Además, chip de sellos de
+  // fidelización si el profesional pertenece a un negocio con programa.
+  const withDebt = await bookingService.attachClientDebt(bookings);
+  return loyaltyService.attachLoyaltyToBookings(withDebt, prof.businessId);
 }
 
 async function getMyServices(userId) {

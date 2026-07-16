@@ -56,6 +56,14 @@ try {
   const feeFile = path.join(manualDir, '20260714000000_cancellation_fee.sql');
   run(`npx prisma db execute --file "${feeFile}" --schema "${schema}"`);
 
+  // 3.5) Fidelización punch-card (plan Estudio): tablas LoyaltyProgram/Card/
+  //      Stamp/Reward. SQL idempotente (IF NOT EXISTS / catálogo para FKs), sin
+  //      CONCURRENTLY, así que el archivo entero corre como una transacción
+  //      implícita sin problema. Fatal: sin las tablas los endpoints /api/loyalty
+  //      y el hook de sello en markComplete darían 500 en producción.
+  const loyaltyFile = path.join(manualDir, '20260715000000_loyalty.sql');
+  run(`npx prisma db execute --file "${loyaltyFile}" --schema "${schema}"`);
+
   // 4) Performance indexes (non-critical). DECISION ON CONCURRENTLY:
   //    CREATE INDEX CONCURRENTLY cannot run inside a transaction block, and
   //    `prisma db execute --file` sends the whole multi-statement file to
