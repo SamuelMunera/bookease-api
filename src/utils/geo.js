@@ -12,7 +12,33 @@ function haversine(lat1, lon1, lat2, lon2) {
 
 const COUNTRY_CODE = { CO: 'co', US: 'us' };
 
+const GOOGLE_MAPS_KEY = process.env.GOOGLE_MAPS_KEY || '';
 const MAPBOX_TOKEN = process.env.MAPBOX_TOKEN || '';
+
+// Geocode con Google Geocoding API. Proveedor principal de la ubicación del
+// negocio. Usa `components` para acotar por país/código postal y valida el país
+// devuelto para no persistir una ubicación de otro país.
+async function geocodeGoogle(address, city, { state, zipCode, cc }) {
+  const parts = [address, city, state, zipCode].filter(Boolean).join(', ');
+  const params = new URLSearchParams({ address: parts, key: GOOGLE_MAPS_KEY, language: 'es' });
+  const components = [];
+  if (cc)      components.push(`country:${cc.toUpperCase()}`);
+  if (zipCode) components.push(`postal_code:${zipCode}`);
+  if (components.length) params.set('components', components.join('|'));
+
+  const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?${params.toString()}`);
+  const data = await res.json();
+  const r = data.results?.[0];
+  if (!r?.geometry?.location) return null;
+
+  // Rechaza resultados que cayeron en un país distinto al esperado.
+  const gotCC = r.address_components?.find(c => c.types?.includes('country'))?.short_name?.toLowerCase();
+  if (cc && gotCC && gotCC !== cc.toLowerCase()) return null;
+
+  const { lat, lng } = r.geometry.location;
+  if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng };
+  return null;
+}
 
 // Geocode with Mapbox Geocoding v6 using STRUCTURED input (address_line1 /
 // place / region / postcode / country), which is far more precise than a free
@@ -73,17 +99,18 @@ async function geocodeNominatim(address, city, { state, zipCode, cc }) {
   return null;
 }
 
-// Geocode an address with full geographic context. Uses Mapbox when the token
-// is configured, Nominatim otherwise. Best-effort: returns null on any failure
-// so it never blocks the main operation.
+// Geocode an address with full geographic context. Prioridad: Google (proveedor
+// principal de la ubicación del negocio) → Mapbox → Nominatim, según qué
+// credencial esté configurada. Best-effort: devuelve null ante cualquier fallo
+// para no bloquear la operación principal.
 async function geocodeAddress(address, city, opts = {}) {
   try {
     const { state, country, zipCode } = opts;
     const cc = COUNTRY_CODE[(country || 'CO').toUpperCase()];
     const args = { state, zipCode, cc };
-    return MAPBOX_TOKEN
-      ? await geocodeMapbox(address, city, args)
-      : await geocodeNominatim(address, city, args);
+    if (GOOGLE_MAPS_KEY) return await geocodeGoogle(address, city, args);
+    if (MAPBOX_TOKEN)    return await geocodeMapbox(address, city, args);
+    return await geocodeNominatim(address, city, args);
   } catch {
     return null;
   }
