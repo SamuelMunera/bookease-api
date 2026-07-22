@@ -28,8 +28,15 @@ function maskEmail(email) {
 }
 
 function fmtDate(d) {
-  return new Date(String(d).slice(0, 10) + 'T00:00:00')
-    .toLocaleDateString('es-CO', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  if (!d) return '—';
+  // `date` es DateTime @db.Date en Prisma: llega como objeto Date (UTC
+  // medianoche), no como string. `String(dateObj).slice(0,10)` daría
+  // "Tue Jul 21" → "Invalid Date". Normalizamos a 'YYYY-MM-DD' primero y
+  // aceptamos también strings ISO por si el valor ya viene serializado.
+  const iso = d instanceof Date ? d.toISOString().slice(0, 10) : String(d).slice(0, 10);
+  const parsed = new Date(iso + 'T00:00:00');
+  if (isNaN(parsed.getTime())) return String(d);
+  return parsed.toLocaleDateString('es-CO', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 }
 
 function extract(booking) {
@@ -87,8 +94,13 @@ function layout(content) {
 /* ── Confirmation ─────────────────────────────────────────── */
 // pending: la reserva nació PENDING (online) y aún espera confirmación del
 // negocio/profesional; el copy no debe afirmar "confirmada" todavía.
-function confirmHtml({ to, name, service, date, startTime, endTime, proOrClient, isHome, address, pending }) {
+function confirmHtml({ to, name, service, date, startTime, endTime, proOrClient, isHome, address, pending, agendaPath }) {
   const isClient = to === 'client';
+  // El cliente va a sus reservas; el lado negocio (profesional o dueño) va a su
+  // agenda. agendaPath lo decide el emisor según el destinatario (/pro/dashboard
+  // para el profesional, /agenda para el dueño).
+  const ctaHref  = isClient ? `${APP_URL}/my-bookings` : `${APP_URL}${agendaPath || '/pro/dashboard'}`;
+  const ctaLabel = isClient ? 'Ver mis reservas' : 'Ver mi agenda';
   const heading  = isClient
     ? (pending ? 'Recibimos tu reserva' : '¡Reserva confirmada!')
     : (pending ? 'Nueva reserva por confirmar' : 'Nueva reserva agendada');
@@ -118,7 +130,7 @@ function confirmHtml({ to, name, service, date, startTime, endTime, proOrClient,
       <h1 class="title" style="margin-top:12px">${heading}</h1>
       <p class="sub">${sub}</p>
       <table class="detail-table">${rows.map(([l,v]) => `<tr><td class="label">${l}</td><td class="value">${v}</td></tr>`).join('')}</table>
-      <a href="${APP_URL}/my-bookings" class="cta">Ver mis reservas</a>
+      <a href="${ctaHref}" class="cta">${ctaLabel}</a>
     </div>
     <div class="footer">Slotly · No respondas a este correo.<br>Si no hiciste esta reserva, <a href="${APP_URL}" style="color:#D4A853">ingresa a la app</a> y cancélala.</div>
   `);
@@ -381,13 +393,23 @@ async function sendBookingConfirmation(booking, { clientOnly = false } = {}) {
       html: confirmHtml({ to:'client', name:clientName, service, date, startTime, endTime, proOrClient:proName, isHome, address, pending }),
     });
   }
-  // Lado negocio: profesional + dueño del negocio (deduplicados).
-  if (!clientOnly) for (const recipient of businessRecipients(clientEmail, proEmail, businessEmail)) {
-    jobs.push({
-      bookingId: booking.id, kind: 'confirmation:business', recipient,
-      subject: pending ? `Nueva reserva por confirmar – ${service}` : `Nueva reserva – ${service}`,
-      html: confirmHtml({ to:'pro', name:proName, service, date, startTime, endTime, proOrClient:clientName, isHome, address, pending }),
-    });
+  // Lado negocio: profesional + dueño del negocio (deduplicados). Cada uno
+  // aterriza en SU agenda: el profesional en /pro/dashboard, el dueño en
+  // /agenda. Dedup: primero gana (si el dueño es el mismo profesional, recibe
+  // un solo correo con el enlace del profesional).
+  if (!clientOnly) {
+    const seen = new Set([(clientEmail || '').toLowerCase()]);
+    for (const [recipient, agendaPath] of [[proEmail, '/pro/dashboard'], [businessEmail, '/agenda']]) {
+      if (!isReal(recipient)) continue;
+      const key = recipient.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      jobs.push({
+        bookingId: booking.id, kind: 'confirmation:business', recipient,
+        subject: pending ? `Nueva reserva por confirmar – ${service}` : `Nueva reserva – ${service}`,
+        html: confirmHtml({ to:'pro', name:proName, service, date, startTime, endTime, proOrClient:clientName, isHome, address, pending, agendaPath }),
+      });
+    }
   }
   console.log('[email] RESOLVED', JSON.stringify({
     bookingId: booking.id, kind: 'confirmation',
